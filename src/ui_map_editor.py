@@ -160,6 +160,7 @@ class Ui_MapEditor(object):
         self.toolModeBox = QtWidgets.QComboBox()
         self.toolModeBox.addItem("🖌️ Paint", "paint")
         self.toolModeBox.addItem("📏 Measure", "measure")
+        self.toolModeBox.addItem("🔤 Text", "text")
         self.toolModeLayout.addWidget(self.toolModeLabel)
         self.toolModeLayout.addWidget(self.toolModeBox)
         

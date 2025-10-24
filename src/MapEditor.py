@@ -74,6 +74,9 @@ class MapEditor(QtWidgets.QMainWindow):
 
         self.read(fn)
 
+        # Text annotations storage
+        self.text_items = []
+
         view_width = self.frameGeometry().width()
 
         self.min_multiplier = math.ceil(view_width / self.map_width_cells)
@@ -118,9 +121,31 @@ class MapEditor(QtWidgets.QMainWindow):
                     self.deselectDimension()
                 return True
             elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+                # Prefer deleting selected dimension if any
                 if self.selected_dimension:
                     self.deleteSelectedDimension()
                     return True
+                # Otherwise delete any selected QGraphicsItems (text or other items)
+                try:
+                    selected = []
+                    if hasattr(self, 'scene') and self.scene is not None:
+                        selected = self.scene.selectedItems()
+                    if selected:
+                        for item in selected:
+                            # remove from text_items if present
+                            try:
+                                if item in self.text_items:
+                                    self.text_items.remove(item)
+                            except Exception:
+                                pass
+                            try:
+                                self.scene.removeItem(item)
+                            except Exception:
+                                pass
+                        self.ui.statusInfo.setText("🗑️ Selected items deleted")
+                        return True
+                except Exception:
+                    pass
 
         # Handle mouse move for painting
         if (event.type() == QtCore.QEvent.MouseMove and 
@@ -236,6 +261,12 @@ class MapEditor(QtWidgets.QMainWindow):
         if self.tool_mode == 'measure':
             self.ui.statusInfo.setText("📏 Measure Mode: Click two points")
             # Disable color selection in measure mode
+            self.ui.colorBox.setEnabled(False)
+            self.ui.cursorSizeSlider.setEnabled(False)
+            self.ui.cursorSizeSpinBox.setEnabled(False)
+        elif self.tool_mode == 'text':
+            self.ui.statusInfo.setText("🔤 Text Mode: Click to add text annotations")
+            # Disable color/brush controls in text mode
             self.ui.colorBox.setEnabled(False)
             self.ui.cursorSizeSlider.setEnabled(False)
             self.ui.cursorSizeSpinBox.setEnabled(False)
@@ -421,6 +452,38 @@ class MapEditor(QtWidgets.QMainWindow):
         
         print(f"Created dimension: {meter_distance:.3f} meters")
         self.ui.statusInfo.setText(f"📏 Measured: {meter_distance:.3f} m")
+
+    def addTextAnnotation(self, scene_pos, text):
+        """Create a movable/selectable text annotation at the given scene position."""
+        try:
+            # Create the text item
+            text_item = self.scene.addText(text)
+            # Scale font relative to pixels_per_cell for readability
+            font = text_item.font()
+            size = max(8, int(self.pixels_per_cell / 3))
+            font.setPointSize(size)
+            font.setBold(True)
+            text_item.setFont(font)
+            text_item.setDefaultTextColor(Qt.yellow)
+            text_item.setPos(scene_pos.x(), scene_pos.y())
+            text_item.setZValue(1001)
+
+            # Make it movable and selectable
+            try:
+                from PyQt5.QtWidgets import QGraphicsItem
+                text_item.setFlag(QGraphicsItem.ItemIsMovable, True)
+                text_item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            except Exception:
+                # Older PyQt versions: ignore
+                pass
+
+            self.text_items.append(text_item)
+            print(f"Added text annotation: '{text}' at ({scene_pos.x():.1f}, {scene_pos.y():.1f})")
+            self.ui.statusInfo.setText(f"Added text: {text}")
+            return text_item
+        except Exception as e:
+            print('Error creating text annotation:', e)
+            return None
 
     def cancelMeasurement(self):
         """Cancel ongoing measurement"""
@@ -803,6 +866,16 @@ class MapEditor(QtWidgets.QMainWindow):
             self.ui.graphicsView.viewport().setFocus()
         except Exception:
             pass
+        # If text mode, prompt for text and add annotation
+        if self.tool_mode == 'text':
+            scene_pos = event.scenePos()
+            try:
+                text, ok = QtWidgets.QInputDialog.getText(self, 'Add Text', 'Annotation text:')
+                if ok and text and text.strip():
+                    self.addTextAnnotation(scene_pos, text.strip())
+            except Exception as e:
+                print('Error adding text annotation:', e)
+            return
         if self.tool_mode == 'measure':
             # Check if clicking on an existing dimension to select it
             scene_pos = event.scenePos()
