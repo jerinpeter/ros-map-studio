@@ -274,6 +274,14 @@ class Ui_MapEditor(object):
         self.actionLayout.addWidget(self.clearDimensionsBtn)
         self.actionLayout.addWidget(self.saveButton)
         self.actionLayout.addWidget(self.closeButton)
+
+        # Undo/Redo buttons
+        self.undoButton = QtWidgets.QPushButton("↶ Undo")
+        self.undoButton.setToolTip("Undo (Ctrl+Z)")
+        self.redoButton = QtWidgets.QPushButton("↷ Redo")
+        self.redoButton.setToolTip("Redo (Ctrl+Shift+Z)")
+        self.actionLayout.addWidget(self.undoButton)
+        self.actionLayout.addWidget(self.redoButton)
         
         # Add groups to toolbar
         self.toolbarLayout.addWidget(self.fileInfoGroup)

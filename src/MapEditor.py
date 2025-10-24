@@ -4,6 +4,7 @@ from ui_map_editor import Ui_MapEditor
 
 from PyQt5.QtGui import QPainter, QBrush, QPen, QTextCursor
 from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QUndoStack, QUndoCommand
 
 import math
 import yaml
@@ -12,6 +13,26 @@ import sys
 import os
 
 
+# --- Undo/Redo command for snapshot-based state ---
+class SnapshotCommand(QUndoCommand):
+    def __init__(self, editor, before_state, after_state, label="Edit"):
+        super(SnapshotCommand, self).__init__(label)
+        self.editor = editor
+        self.before = before_state
+        self.after = after_state
+
+    def undo(self):
+        try:
+            self.editor._restoreState(self.before)
+        except Exception:
+            pass
+
+    def redo(self):
+        try:
+            self.editor._restoreState(self.after)
+        except Exception:
+            pass
+
 # --- Helper classes for text annotations with resize handles ---
 class TextAnnotationItem(QtWidgets.QGraphicsTextItem):
     """QGraphicsTextItem subclass that notifies a callback on position/selection changes."""
@@ -19,6 +40,8 @@ class TextAnnotationItem(QtWidgets.QGraphicsTextItem):
         super(TextAnnotationItem, self).__init__(*args, **kwargs)
         self._change_callback = None
         self._editing = False
+        self._pressPos = None
+        self._editor_ref = None  # set by editor when creating item
 
     def setChangeCallback(self, cb):
         self._change_callback = cb
@@ -113,6 +136,35 @@ class TextAnnotationItem(QtWidgets.QGraphicsTextItem):
         except Exception:
             pass
 
+    def mousePressEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton:
+                self._pressPos = QtCore.QPointF(self.pos())
+                ed = getattr(self, '_editor_ref', None)
+                if ed is not None:
+                    try:
+                        ed._beginSnapshot("Move Text")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            super(TextAnnotationItem, self).mousePressEvent(event)
+        except Exception:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        try:
+            super(TextAnnotationItem, self).mouseReleaseEvent(event)
+        except Exception:
+            pass
+        try:
+            ed = getattr(self, '_editor_ref', None)
+            if ed is not None:
+                ed._endSnapshot("Move Text")
+        finally:
+            self._pressPos = None
+
 
 class ResizeHandle(QtWidgets.QGraphicsRectItem):
     """Small draggable handle used to resize a TextSelectionOverlay."""
@@ -131,6 +183,12 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
             event.accept()
         except Exception:
             pass
+        try:
+            ed = getattr(self.parent_overlay, 'editor', None)
+            if ed is not None:
+                ed._beginSnapshot("Resize Text")
+        except Exception:
+            pass
 
     def mouseMoveEvent(self, event):
         # map to scene position
@@ -147,6 +205,12 @@ class ResizeHandle(QtWidgets.QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         try:
             self.parent_overlay.update()
+        except Exception:
+            pass
+        try:
+            ed = getattr(self.parent_overlay, 'editor', None)
+            if ed is not None:
+                ed._endSnapshot("Resize Text")
         except Exception:
             pass
         try:
@@ -277,6 +341,9 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui = Ui_MapEditor()
         self.ui.setupUi(self)
 
+        # Undo stack
+        self.undo_stack = QUndoStack(self)
+
         self.setMinimumSize(600, 600)
         
         # Initialize cursor indicator early
@@ -351,6 +418,11 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.closeButton.clicked.connect(self.closeEvent)
         self.ui.saveButton.clicked.connect(self.saveEvent)
         self.ui.clearDimensionsBtn.clicked.connect(self.clearDimensions)
+        try:
+            self.ui.undoButton.clicked.connect(self.undo_stack.undo)
+            self.ui.redoButton.clicked.connect(self.undo_stack.redo)
+        except Exception:
+            pass
 
         self.ui.graphicsView.horizontalScrollBar().valueChanged.connect(self.scrollChanged)
         self.ui.graphicsView.verticalScrollBar().valueChanged.connect(self.scrollChanged)
@@ -374,6 +446,15 @@ class MapEditor(QtWidgets.QMainWindow):
         # Default to Select tool on startup to prevent accidental text adds
         try:
             self._setToolMode('select')
+        except Exception:
+            pass
+
+        # Keyboard shortcuts for undo/redo
+        try:
+            undo_sc = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+            undo_sc.activated.connect(self.undo_stack.undo)
+            redo_sc = QtWidgets.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self)
+            redo_sc.activated.connect(self.undo_stack.redo)
         except Exception:
             pass
 
@@ -416,7 +497,9 @@ class MapEditor(QtWidgets.QMainWindow):
             elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
                 # Prefer deleting selected dimension if any
                 if self.selected_dimension:
-                    self.deleteSelectedDimension()
+                    def do_del_dim():
+                        self.deleteSelectedDimension()
+                    self._pushSnapshotAction("Delete Dimension", do_del_dim)
                     return True
                 # Otherwise delete any selected QGraphicsItems (text or other items)
                 try:
@@ -424,17 +507,19 @@ class MapEditor(QtWidgets.QMainWindow):
                     if hasattr(self, 'scene') and self.scene is not None:
                         selected = self.scene.selectedItems()
                     if selected:
-                        for item in selected:
-                            # remove from text_items if present
-                            try:
-                                if item in self.text_items:
-                                    self.text_items.remove(item)
-                            except Exception:
-                                pass
-                            try:
-                                self.scene.removeItem(item)
-                            except Exception:
-                                pass
+                        def do_del_items():
+                            for item in list(selected):
+                                # remove from text_items if present
+                                try:
+                                    if item in self.text_items:
+                                        self.text_items.remove(item)
+                                except Exception:
+                                    pass
+                                try:
+                                    self.scene.removeItem(item)
+                                except Exception:
+                                    pass
+                        self._pushSnapshotAction("Delete Selection", do_del_items)
                         self.ui.statusInfo.setText("🗑️ Selected items deleted")
                         return True
                 except Exception:
@@ -500,6 +585,108 @@ class MapEditor(QtWidgets.QMainWindow):
         except Exception:
             pass
         return False
+
+    # --- Snapshot-based undo/redo helpers ---
+    def _captureState(self):
+        before_ppc = getattr(self, 'pixels_per_cell', self.min_multiplier)
+        return {
+            'text': self._captureTextAnnotations(before_ppc),
+            'dims': self._captureDimensions(before_ppc)[0]
+        }
+
+    def _restoreState(self, state):
+        if not state:
+            return
+        self._restoring_state = True
+        try:
+            # Remove current text items
+            try:
+                for item in list(getattr(self, 'text_items', [])):
+                    try:
+                        self.scene.removeItem(item)
+                    except Exception:
+                        pass
+                self.text_items = []
+            except Exception:
+                pass
+
+            # Remove current dimensions
+            try:
+                for dim in list(getattr(self, 'dimensions', [])):
+                    try:
+                        self.scene.removeItem(dim['line'])
+                        self.scene.removeItem(dim['arrow1'])
+                        self.scene.removeItem(dim['arrow2'])
+                        self.scene.removeItem(dim['text'])
+                        self.scene.removeItem(dim['background'])
+                    except Exception:
+                        pass
+                self.dimensions = []
+                self.selected_dimension = None
+            except Exception:
+                pass
+
+            # Restore
+            try:
+                self._restoreTextAnnotations(state.get('text', []))
+            except Exception:
+                pass
+            try:
+                self._restoreDimensions(state.get('dims', []), None)
+            except Exception:
+                pass
+            # Update overlay selection if needed
+            try:
+                self.onSelectionChanged()
+            except Exception:
+                pass
+        finally:
+            self._restoring_state = False
+
+    def _pushSnapshotAction(self, label, action_fn):
+        try:
+            before = self._captureState()
+        except Exception:
+            before = None
+        try:
+            action_fn()
+        except Exception as e:
+            print(f"Action failed during '{label}':", e)
+            return
+        try:
+            after = self._captureState()
+        except Exception:
+            after = None
+        try:
+            cmd = SnapshotCommand(self, before, after, label)
+            self.undo_stack.push(cmd)
+        except Exception:
+            pass
+
+    def _beginSnapshot(self, label):
+        if getattr(self, '_restoring_state', False):
+            return
+        try:
+            self._snapshot_label = label
+            self._snapshot_before = self._captureState()
+        except Exception:
+            self._snapshot_before = None
+
+    def _endSnapshot(self, label=None):
+        if getattr(self, '_restoring_state', False):
+            return
+        before = getattr(self, '_snapshot_before', None)
+        if before is None:
+            return
+        try:
+            after = self._captureState()
+            cmd = SnapshotCommand(self, before, after, label or getattr(self, '_snapshot_label', 'Edit'))
+            self.undo_stack.push(cmd)
+        except Exception:
+            pass
+        finally:
+            self._snapshot_before = None
+            self._snapshot_label = None
 
     def paint_area(self, center_x, center_y, brush_size):
         """Paint an area with the specified brush size"""
@@ -658,18 +845,20 @@ class MapEditor(QtWidgets.QMainWindow):
         try:
             if not hasattr(self, 'scene') or self.scene is None:
                 return
-            updated_any = False
-            for item in self.scene.selectedItems():
-                if isinstance(item, QtWidgets.QGraphicsTextItem):
-                    font = item.font()
-                    font.setPointSize(int(value))
-                    item.setFont(font)
-                    updated_any = True
-            if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
-                try:
-                    self.current_text_overlay.update()
-                except Exception:
-                    pass
+            def do_change():
+                updated_any = False
+                for item in self.scene.selectedItems():
+                    if isinstance(item, QtWidgets.QGraphicsTextItem):
+                        font = item.font()
+                        font.setPointSize(int(value))
+                        item.setFont(font)
+                        updated_any = True
+                if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                    try:
+                        self.current_text_overlay.update()
+                    except Exception:
+                        pass
+            self._pushSnapshotAction("Change Text Size", do_change)
         except Exception as e:
             print('Error applying text size:', e)
 
@@ -679,16 +868,18 @@ class MapEditor(QtWidgets.QMainWindow):
             if not hasattr(self, 'scene') or self.scene is None:
                 return
             a = float(angle)
-            updated_any = False
-            for item in self.scene.selectedItems():
-                if isinstance(item, QtWidgets.QGraphicsTextItem):
-                    item.setRotation(a)
-                    updated_any = True
-            if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
-                try:
-                    self.current_text_overlay.update()
-                except Exception:
-                    pass
+            def do_change():
+                updated_any = False
+                for item in self.scene.selectedItems():
+                    if isinstance(item, QtWidgets.QGraphicsTextItem):
+                        item.setRotation(a)
+                        updated_any = True
+                if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                    try:
+                        self.current_text_overlay.update()
+                    except Exception:
+                        pass
+            self._pushSnapshotAction("Rotate Text", do_change)
         except Exception as e:
             print('Error applying text rotation:', e)
 
@@ -967,6 +1158,11 @@ class MapEditor(QtWidgets.QMainWindow):
                 text_item.setFlag(QGraphicsItem.ItemIsSelectable, True)
                 # hook up change callback so overlay can update when item moves
                 text_item.setChangeCallback(self._onTextItemChanged)
+                # let item push move snapshots via editor reference
+                try:
+                    text_item._editor_ref = self
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -1527,10 +1723,11 @@ class MapEditor(QtWidgets.QMainWindow):
 
             scene_pos = event.scenePos()
             try:
-                # Create a new in-place editable text item
-                item = self.addTextAnnotation(scene_pos, "Text")
-                if item is not None:
-                    item.beginEdit()
+                def do_add():
+                    item = self.addTextAnnotation(scene_pos, "Text")
+                    if item is not None:
+                        item.beginEdit()
+                self._pushSnapshotAction("Add Text", do_add)
             except Exception as e:
                 print('Error adding text annotation:', e)
             return
