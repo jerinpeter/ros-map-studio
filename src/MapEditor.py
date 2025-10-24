@@ -84,9 +84,21 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.graphicsView.horizontalScrollBar().valueChanged.connect(self.scrollChanged)
         self.ui.graphicsView.verticalScrollBar().valueChanged.connect(self.scrollChanged)
 
+        # Ensure mouse move events are tracked on the viewport
         self.ui.graphicsView.setMouseTracking(True)
+
+        # Install event filter on both the graphics view and its viewport so
+        # we reliably receive keyboard and mouse events regardless of which
+        # sub-widget currently has focus.
         self.ui.graphicsView.viewport().installEventFilter(self)
-        self.ui.graphicsView.setFocusPolicy(Qt.StrongFocus)  # Enable keyboard events
+        self.ui.graphicsView.installEventFilter(self)
+
+        # Enable keyboard focus on both the view and the viewport and set focus
+        # to the view so that key presses (Esc, Delete, Backspace, etc.) are
+        # delivered to the event filter.
+        self.ui.graphicsView.setFocusPolicy(Qt.StrongFocus)
+        self.ui.graphicsView.viewport().setFocusPolicy(Qt.StrongFocus)
+        self.ui.graphicsView.setFocus()
 
 
     def eventFilter(self, source, event):
@@ -135,6 +147,12 @@ class MapEditor(QtWidgets.QMainWindow):
         
         # Handle mouse enter/leave to show/hide cursor
         elif event.type() == QtCore.QEvent.Enter and source is self.ui.graphicsView.viewport():
+            # Ensure the viewport gets keyboard focus when the mouse enters
+            try:
+                self.ui.graphicsView.viewport().setFocus()
+            except Exception:
+                pass
+
             if not self.cursor_indicator:
                 self.createCursorIndicator()
                 
@@ -618,20 +636,63 @@ class MapEditor(QtWidgets.QMainWindow):
         
 
     def read(self, fn):
-        # try to open as fn or fn.pgm
+        # try to open as fn or fn.pgm. If not found, also look in the
+        # repository-level `maps/` directory (useful for keeping project
+        # maps in one place).
+        #
+        # Resolution order:
+        # 1. Exactly `fn` (path as given)
+        # 2. `fn + '.pgm'` (same dir)
+        # 3. `maps/fn` (maps directory)
+        # 4. `maps/fn + '.pgm'`
+        #
+        # Create maps dir path relative to repository root (parent of src)
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        maps_dir = os.path.join(repo_root, 'maps')
+
+        # Ensure maps_dir exists (created earlier by the assistant if needed)
         try:
-            self.im = Image.open(fn)
-            self.fn = fn
-        except:
-            fnpgm = fn + '.pgm'
-            print(fnpgm)
+            os.makedirs(maps_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        tried_paths = []
+
+        def try_open(path):
+            tried_paths.append(path)
             try:
-                self.im = Image.open(fnpgm)
-                self.fn = fnpgm
-            except:
-                #print(sys.exc_info()[0])
-                print("ERROR:  Cannot open file", fn, "or", fnpgm)
-                sys.exit(1)
+                im = Image.open(path)
+                return im, path
+            except Exception:
+                return None, None
+
+        # 1) try as provided
+        im, used = try_open(fn)
+
+        # 2) try with .pgm extension next
+        if im is None:
+            fnpgm = fn + '.pgm'
+            im, used = try_open(fnpgm)
+
+        # 3) try in maps/ directory
+        if im is None:
+            maps_path = os.path.join(maps_dir, fn)
+            im, used = try_open(maps_path)
+
+        # 4) try maps/<name>.pgm
+        if im is None:
+            maps_path_pgm = os.path.join(maps_dir, fn + '.pgm')
+            im, used = try_open(maps_path_pgm)
+
+        if im is None:
+            print("Tried the following paths:")
+            for p in tried_paths:
+                print("  ", p)
+            print("ERROR:  Cannot open file", fn)
+            sys.exit(1)
+
+        self.im = im
+        self.fn = used
 
         if self.im.format != 'PPM':
             print("ERROR:  This is not a PGM formatted file.")
@@ -652,22 +713,71 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.statusInfo.setText("Map loaded successfully!")
         self.ui.statusbar.showMessage(f"Loaded: {os.path.basename(self.fn)} ({self.map_width_cells}x{self.map_height_cells})")
 
-        fn_yaml = os.path.splitext(fn)[0] + '.yaml'
+        # Try to find corresponding YAML file. We prefer a YAML next to the
+        # actual image we opened (`used` path), then fall back to common
+        # alternatives (original fn + .yaml, maps/ directory).
+        # Build candidate YAML paths in order.
+        candidates = []
+
+        # 1) same directory as the image we actually opened
         try:
-            stream = open(fn_yaml, "r")
-            docs = yaml.load_all(stream, Loader=yaml.FullLoader)
-            for doc in docs:
-                self.occupied_thresh = doc['occupied_thresh']  # probability its occupied
-                self.free_thresh = doc['free_thresh']  # probability its uncertain or occupied
-                self.resolution = doc['resolution']    # in meters per cell
-                self.origin_x = doc['origin'][0]
-                self.origin_y = doc['origin'][1]
-        except:
-            print("ERROR:  Corresponding YAML file", fn_yaml, "is missing or incorrectly formatted.")
-            sys.exit(1) 
+            base_used = os.path.splitext(self.fn)[0]
+            candidates.append(base_used + '.yaml')
+        except Exception:
+            pass
+
+        # 2) if the user passed a simple name like 'floor', try that next
+        try:
+            candidates.append(os.path.splitext(fn)[0] + '.yaml')
+        except Exception:
+            pass
+
+        # 3) maps/<name>.yaml in repo-level maps dir
+        try:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            maps_dir = os.path.join(repo_root, 'maps')
+            candidates.append(os.path.join(maps_dir, os.path.splitext(fn)[0] + '.yaml'))
+        except Exception:
+            pass
+
+        yaml_found = False
+        yaml_error = None
+        for fn_yaml in candidates:
+            if not fn_yaml:
+                continue
+            try:
+                with open(fn_yaml, 'r') as stream:
+                    docs = yaml.load_all(stream, Loader=yaml.FullLoader)
+                    for doc in docs:
+                        # Validate expected keys
+                        self.occupied_thresh = doc['occupied_thresh']  # probability its occupied
+                        self.free_thresh = doc['free_thresh']  # probability its uncertain or occupied
+                        self.resolution = doc['resolution']    # in meters per cell
+                        self.origin_x = doc['origin'][0]
+                        self.origin_y = doc['origin'][1]
+                    yaml_found = True
+                    self.yaml_path = fn_yaml
+                    break
+            except Exception as e:
+                yaml_error = e
+                continue
+
+        if not yaml_found:
+            if yaml_error:
+                print("ERROR:  Corresponding YAML file is missing or incorrectly formatted.")
+                print("Last YAML parse error:", yaml_error)
+            else:
+                print("ERROR:  Corresponding YAML file is missing or incorrectly formatted.")
+            sys.exit(1)
 
 
     def mapClick(self, event):
+        # Ensure the viewport has focus on click so that subsequent key
+        # presses are delivered to our eventFilter
+        try:
+            self.ui.graphicsView.viewport().setFocus()
+        except Exception:
+            pass
         if self.tool_mode == 'measure':
             # Check if clicking on an existing dimension to select it
             scene_pos = event.scenePos()
