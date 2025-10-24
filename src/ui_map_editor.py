@@ -158,6 +158,7 @@ class Ui_MapEditor(object):
         self.toolModeLayout = QtWidgets.QHBoxLayout()
         self.toolModeLabel = QtWidgets.QLabel("Tool Mode:")
         self.toolModeBox = QtWidgets.QComboBox()
+        self.toolModeBox.addItem("🖱️ Select", "select")
         self.toolModeBox.addItem("🖌️ Paint", "paint")
         self.toolModeBox.addItem("📏 Measure", "measure")
         self.toolModeBox.addItem("🔤 Text", "text")
@@ -186,10 +187,35 @@ class Ui_MapEditor(object):
         self.cursorLayout.addWidget(self.cursorLabel)
         self.cursorLayout.addWidget(self.cursorSizeSlider)
         self.cursorLayout.addWidget(self.cursorSizeSpinBox)
+
+        # Text properties (size + rotation)
+        self.textPropLayout = QtWidgets.QHBoxLayout()
+        self.textSizeLabel = QtWidgets.QLabel("Text Size:")
+        self.textSizeSpinBox = QtWidgets.QSpinBox()
+        self.textSizeSpinBox.setMinimum(6)
+        self.textSizeSpinBox.setMaximum(144)
+        self.textSizeSpinBox.setValue(12)
+
+        self.textRotationLabel = QtWidgets.QLabel("Text Rot:")
+        self.textRotationSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.textRotationSlider.setMinimum(0)
+        self.textRotationSlider.setMaximum(360)
+        self.textRotationSlider.setValue(0)
+        self.textRotationSpinBox = QtWidgets.QSpinBox()
+        self.textRotationSpinBox.setMinimum(0)
+        self.textRotationSpinBox.setMaximum(360)
+        self.textRotationSpinBox.setValue(0)
+
+        self.textPropLayout.addWidget(self.textSizeLabel)
+        self.textPropLayout.addWidget(self.textSizeSpinBox)
+        self.textPropLayout.addWidget(self.textRotationLabel)
+        self.textPropLayout.addWidget(self.textRotationSlider)
+        self.textPropLayout.addWidget(self.textRotationSpinBox)
         
         self.toolsLayout.addLayout(self.toolModeLayout)
         self.toolsLayout.addLayout(self.colorLayout)
         self.toolsLayout.addLayout(self.cursorLayout)
+        self.toolsLayout.addLayout(self.textPropLayout)
         
         # View controls group
         self.viewGroup = QtWidgets.QGroupBox("View Controls")

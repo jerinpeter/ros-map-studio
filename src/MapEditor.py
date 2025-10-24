@@ -2,7 +2,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets, uic
 
 from ui_map_editor import Ui_MapEditor
 
-from PyQt5.QtGui import QPainter, QBrush, QPen
+from PyQt5.QtGui import QPainter, QBrush, QPen, QTextCursor
 from PyQt5.QtCore import Qt
 
 import math
@@ -10,6 +10,258 @@ import yaml
 from PIL import Image
 import sys
 import os
+
+
+# --- Helper classes for text annotations with resize handles ---
+class TextAnnotationItem(QtWidgets.QGraphicsTextItem):
+    """QGraphicsTextItem subclass that notifies a callback on position/selection changes."""
+    def __init__(self, *args, **kwargs):
+        super(TextAnnotationItem, self).__init__(*args, **kwargs)
+        self._change_callback = None
+        self._editing = False
+
+    def setChangeCallback(self, cb):
+        self._change_callback = cb
+
+    def itemChange(self, change, value):
+        res = super(TextAnnotationItem, self).itemChange(change, value)
+        try:
+            if self._change_callback is not None:
+                # Notify callback for position or selection changes so overlay can update
+                if change in (QtWidgets.QGraphicsItem.ItemPositionChange,
+                              QtWidgets.QGraphicsItem.ItemPositionHasChanged,
+                              QtWidgets.QGraphicsItem.ItemSelectedChange,
+                              QtWidgets.QGraphicsItem.ItemSelectedHasChanged):
+                    try:
+                        self._change_callback(self, change, value)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return res
+
+    def beginEdit(self):
+        try:
+            self._editing = True
+            self.setTextInteractionFlags(Qt.TextEditorInteraction)
+            self.setFocus(Qt.OtherFocusReason)
+            try:
+                cursor = self.textCursor()
+                cursor.select(QTextCursor.Document)
+                self.setTextCursor(cursor)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def endEdit(self):
+        try:
+            self.setTextInteractionFlags(Qt.NoTextInteraction)
+            self.clearFocus()
+            self._editing = False
+        except Exception:
+            pass
+
+    def focusOutEvent(self, event):
+        try:
+            if self._editing:
+                self.endEdit()
+        except Exception:
+            pass
+        try:
+            super(TextAnnotationItem, self).focusOutEvent(event)
+        except Exception:
+            pass
+
+    def keyPressEvent(self, event):
+        try:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+                # Finish editing on Enter
+                self.endEdit()
+                event.accept()
+                return
+            if event.key() == Qt.Key_Escape:
+                # Cancel edit; if empty, remove item
+                if not self.toPlainText().strip():
+                    try:
+                        sc = self.scene()
+                        if sc is not None:
+                            sc.removeItem(self)
+                    except Exception:
+                        pass
+                else:
+                    self.endEdit()
+                event.accept()
+                return
+        except Exception:
+            pass
+        try:
+            super(TextAnnotationItem, self).keyPressEvent(event)
+        except Exception:
+            pass
+
+    def mouseDoubleClickEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton:
+                self.beginEdit()
+                event.accept()
+                return
+        except Exception:
+            pass
+        try:
+            super(TextAnnotationItem, self).mouseDoubleClickEvent(event)
+        except Exception:
+            pass
+
+
+class ResizeHandle(QtWidgets.QGraphicsRectItem):
+    """Small draggable handle used to resize a TextSelectionOverlay."""
+    def __init__(self, parent_overlay, corner_index, size=8):
+        super(ResizeHandle, self).__init__(-size/2, -size/2, size, size)
+        self.parent_overlay = parent_overlay
+        self.corner_index = corner_index  # 0:tl,1:tr,2:br,3:bl
+        self.setBrush(QtGui.QBrush(QtGui.QColor(255,255,255)))
+        self.setPen(QtGui.QPen(Qt.black))
+        self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
+        self.setZValue(1002)
+
+    def mousePressEvent(self, event):
+        try:
+            event.accept()
+        except Exception:
+            pass
+
+    def mouseMoveEvent(self, event):
+        # map to scene position
+        scene_pos = self.mapToScene(event.pos())
+        try:
+            self.parent_overlay.handleDrag(self, scene_pos)
+        except Exception:
+            pass
+        try:
+            event.accept()
+        except Exception:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        try:
+            self.parent_overlay.update()
+        except Exception:
+            pass
+        try:
+            event.accept()
+        except Exception:
+            pass
+
+
+class TextSelectionOverlay(object):
+    """Manages a selection rectangle and four resize handles for a TextAnnotationItem."""
+    CURSOR_SHAPES = [
+        Qt.SizeFDiagCursor,
+        Qt.SizeBDiagCursor,
+        Qt.SizeFDiagCursor,
+        Qt.SizeBDiagCursor,
+    ]
+
+    def __init__(self, scene, text_item, editor=None):
+        self.scene = scene
+        self.text_item = text_item
+        self.rect_item = None
+        self.handles = []
+        self.editor = editor
+        self.create()
+
+    def create(self):
+        # create rect and handles
+        try:
+            br = self.text_item.mapToScene(self.text_item.boundingRect()).boundingRect()
+            pen = QtGui.QPen(QtGui.QColor(0,120,215))
+            pen.setStyle(Qt.DashLine)
+            pen.setWidth(1)
+            self.rect_item = QtWidgets.QGraphicsRectItem(br)
+            self.rect_item.setPen(pen)
+            self.rect_item.setZValue(1000)
+            self.rect_item.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
+            self.rect_item.setAcceptedMouseButtons(Qt.NoButton)
+            self.scene.addItem(self.rect_item)
+
+            for i in range(4):
+                h = ResizeHandle(self, i, size=8)
+                try:
+                    h.setCursor(self.CURSOR_SHAPES[i])
+                except Exception:
+                    pass
+                self.handles.append(h)
+                self.scene.addItem(h)
+
+            self.update()
+        except Exception as e:
+            print('Error creating selection overlay:', e)
+
+    def update(self):
+        try:
+            br = self.text_item.mapToScene(self.text_item.boundingRect()).boundingRect()
+            if self.rect_item:
+                self.rect_item.setRect(br)
+            # corners: tl,tr,br,bl
+            corners = [br.topLeft(), br.topRight(), br.bottomRight(), br.bottomLeft()]
+            for i, h in enumerate(self.handles):
+                h.setPos(corners[i])
+        except Exception as e:
+            # ignore if underlying C++ objects are gone
+            pass
+
+    def handleDrag(self, handle, scene_pos):
+        # compute scale based on movement of handle relative to opposite corner
+        try:
+            br = self.text_item.mapToScene(self.text_item.boundingRect()).boundingRect()
+            idx = handle.corner_index
+            opp = (idx + 2) % 4
+            corners = [br.topLeft(), br.topRight(), br.bottomRight(), br.bottomLeft()]
+            opp_pt = corners[opp]
+            # compute new diagonal ratio for smoother scaling regardless of drag direction
+            old_diag = math.hypot(br.width(), br.height())
+            if old_diag <= 0:
+                return
+            delta_x = scene_pos.x() - opp_pt.x()
+            delta_y = scene_pos.y() - opp_pt.y()
+            new_diag = math.hypot(delta_x, delta_y)
+            if new_diag <= 0:
+                return
+            scale = new_diag / old_diag
+            # adjust font size
+            font = self.text_item.font()
+            old_size = font.pointSizeF()
+            if old_size <= 0:
+                fallback = font.pointSize()
+                old_size = fallback if fallback > 0 else 12
+            new_size = max(6.0, min(400.0, float(old_size * scale)))
+            font.setPointSizeF(new_size)
+            self.text_item.setFont(font)
+            # update overlay
+            self.update()
+            if self.editor is not None:
+                try:
+                    self.editor._syncTextControls(self.text_item)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def destroy(self):
+        try:
+            if self.rect_item:
+                self.scene.removeItem(self.rect_item)
+                self.rect_item = None
+            for h in self.handles:
+                try:
+                    self.scene.removeItem(h)
+                except Exception:
+                    pass
+            self.handles = []
+        except Exception:
+            pass
 
 
 class MapEditor(QtWidgets.QMainWindow):
@@ -77,6 +329,17 @@ class MapEditor(QtWidgets.QMainWindow):
         # Text annotations storage
         self.text_items = []
 
+        # Connect text property controls if present
+        try:
+            self.ui.textSizeSpinBox.valueChanged.connect(self.handleTextSize)
+            # Keep rotation slider and spinbox in sync and call handler
+            self.ui.textRotationSlider.valueChanged.connect(self.ui.textRotationSpinBox.setValue)
+            self.ui.textRotationSpinBox.valueChanged.connect(self.ui.textRotationSlider.setValue)
+            self.ui.textRotationSlider.valueChanged.connect(self.handleTextRotation)
+        except Exception:
+            # UI may not have text controls in older layouts
+            pass
+
         view_width = self.frameGeometry().width()
 
         self.min_multiplier = math.ceil(view_width / self.map_width_cells)
@@ -108,6 +371,12 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.graphicsView.viewport().setFocusPolicy(Qt.StrongFocus)
         self.ui.graphicsView.setFocus()
 
+        # Default to Select tool on startup to prevent accidental text adds
+        try:
+            self._setToolMode('select')
+        except Exception:
+            pass
+
 
     def eventFilter(self, source, event):
         # Handle ESC key to cancel actions
@@ -119,6 +388,24 @@ class MapEditor(QtWidgets.QMainWindow):
                     print("Measurement cancelled with ESC")
                 elif self.selected_dimension:
                     self.deselectDimension()
+                else:
+                    # ESC switches to Select mode for convenience
+                    try:
+                        self._setToolMode('select')
+                    except Exception:
+                        pass
+                return True
+            elif event.key() == Qt.Key_V:
+                try:
+                    self._setToolMode('select')
+                except Exception:
+                    pass
+                return True
+            elif event.key() == Qt.Key_T:
+                try:
+                    self._setToolMode('text')
+                except Exception:
+                    pass
                 return True
             elif event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
                 # Prefer deleting selected dimension if any
@@ -185,6 +472,16 @@ class MapEditor(QtWidgets.QMainWindow):
             
         return super(MapEditor, self).eventFilter(source, event)
 
+    def _setToolMode(self, mode_str):
+        """Helper to change tool mode by its data string via the combo box."""
+        try:
+            for i in range(self.ui.toolModeBox.count()):
+                if self.ui.toolModeBox.itemData(i) == mode_str:
+                    self.ui.toolModeBox.setCurrentIndex(i)
+                    return
+        except Exception:
+            pass
+
     def paint_area(self, center_x, center_y, brush_size):
         """Paint an area with the specified brush size"""
         if self.color == 'occupied':
@@ -226,13 +523,21 @@ class MapEditor(QtWidgets.QMainWindow):
 
 
     def scrollChanged(self, val):
-        
-        if self.scene.width() and self.scene.height():
-            x = int(self.ui.graphicsView.horizontalScrollBar().value() /  self.scene.width() * self.im.size[0])
-            y = int(self.ui.graphicsView.verticalScrollBar().value() /  self.scene.height() * self.im.size[1])
-            width = int(self.ui.graphicsView.viewport().size().width() /  self.scene.width() * self.im.size[0])
-            height = int(self.ui.graphicsView.viewport().size().height() /  self.scene.height() * self.im.size[1])
-            self.drawBox(x, y, width, height)
+        # Guard because scene may be temporarily deleted during UI operations
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return
+            sw = self.scene.width()
+            sh = self.scene.height()
+            if sw and sh:
+                x = int(self.ui.graphicsView.horizontalScrollBar().value() / sw * self.im.size[0])
+                y = int(self.ui.graphicsView.verticalScrollBar().value() / sh * self.im.size[1])
+                width = int(self.ui.graphicsView.viewport().size().width() / sw * self.im.size[0])
+                height = int(self.ui.graphicsView.viewport().size().height() / sh * self.im.size[1])
+                self.drawBox(x, y, width, height)
+        except Exception:
+            # ignore transient errors (e.g., wrapped C++ object deleted)
+            return
 
 
     def drawBox(self, x=5, y=5, width=50, height=50):
@@ -258,7 +563,20 @@ class MapEditor(QtWidgets.QMainWindow):
         self.tool_mode = mode_data
         print(f"Tool mode changed to: {self.tool_mode}")
         
-        if self.tool_mode == 'measure':
+        if self.tool_mode == 'select':
+            self.ui.statusInfo.setText("🖱️ Select Mode: Click to select, drag to move")
+            # Disable paint controls in select mode
+            self.ui.colorBox.setEnabled(False)
+            self.ui.cursorSizeSlider.setEnabled(False)
+            self.ui.cursorSizeSpinBox.setEnabled(False)
+            # Enable text controls for convenience; they apply to selected text
+            try:
+                self.ui.textSizeSpinBox.setEnabled(True)
+                self.ui.textRotationSlider.setEnabled(True)
+                self.ui.textRotationSpinBox.setEnabled(True)
+            except Exception:
+                pass
+        elif self.tool_mode == 'measure':
             self.ui.statusInfo.setText("📏 Measure Mode: Click two points")
             # Disable color selection in measure mode
             self.ui.colorBox.setEnabled(False)
@@ -270,11 +588,25 @@ class MapEditor(QtWidgets.QMainWindow):
             self.ui.colorBox.setEnabled(False)
             self.ui.cursorSizeSlider.setEnabled(False)
             self.ui.cursorSizeSpinBox.setEnabled(False)
+            # Enable text controls
+            try:
+                self.ui.textSizeSpinBox.setEnabled(True)
+                self.ui.textRotationSlider.setEnabled(True)
+                self.ui.textRotationSpinBox.setEnabled(True)
+            except Exception:
+                pass
         else:
             self.ui.statusInfo.setText("🖌️ Paint Mode")
             self.ui.colorBox.setEnabled(True)
             self.ui.cursorSizeSlider.setEnabled(True)
             self.ui.cursorSizeSpinBox.setEnabled(True)
+            # Disable text controls when not in text mode
+            try:
+                self.ui.textSizeSpinBox.setEnabled(False)
+                self.ui.textRotationSlider.setEnabled(False)
+                self.ui.textRotationSpinBox.setEnabled(False)
+            except Exception:
+                pass
             # Cancel any ongoing measurement
             if self.measuring:
                 self.cancelMeasurement()
@@ -301,6 +633,141 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.statusInfo.setText(f"Brush size: {self.cursor_size}px")
         # Update cursor indicator size
         self.updateCursorIndicatorSize()
+
+    def handleTextSize(self, value):
+        """Apply font size to selected text items."""
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return
+            updated_any = False
+            for item in self.scene.selectedItems():
+                if isinstance(item, QtWidgets.QGraphicsTextItem):
+                    font = item.font()
+                    font.setPointSize(int(value))
+                    item.setFont(font)
+                    updated_any = True
+            if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                try:
+                    self.current_text_overlay.update()
+                except Exception:
+                    pass
+        except Exception as e:
+            print('Error applying text size:', e)
+
+    def handleTextRotation(self, angle):
+        """Apply rotation (degrees) to selected text items."""
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return
+            a = float(angle)
+            updated_any = False
+            for item in self.scene.selectedItems():
+                if isinstance(item, QtWidgets.QGraphicsTextItem):
+                    item.setRotation(a)
+                    updated_any = True
+            if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                try:
+                    self.current_text_overlay.update()
+                except Exception:
+                    pass
+        except Exception as e:
+            print('Error applying text rotation:', e)
+
+    def _syncTextControls(self, text_item):
+        """Update text property widgets to reflect the provided text item."""
+        if text_item is None:
+            return
+        try:
+            font = text_item.font()
+            size_f = font.pointSizeF()
+            if size_f <= 0:
+                size_f = font.pointSize()
+            if size_f > 0 and hasattr(self.ui, 'textSizeSpinBox'):
+                try:
+                    self.ui.textSizeSpinBox.blockSignals(True)
+                    self.ui.textSizeSpinBox.setValue(int(round(size_f)))
+                finally:
+                    self.ui.textSizeSpinBox.blockSignals(False)
+        except Exception:
+            pass
+
+        rotation_val = None
+        try:
+            rotation_val = int(round(text_item.rotation()))
+        except Exception:
+            pass
+
+        if rotation_val is not None:
+            try:
+                if hasattr(self.ui, 'textRotationSpinBox'):
+                    self.ui.textRotationSpinBox.blockSignals(True)
+                    self.ui.textRotationSpinBox.setValue(rotation_val)
+            finally:
+                if hasattr(self.ui, 'textRotationSpinBox'):
+                    self.ui.textRotationSpinBox.blockSignals(False)
+            try:
+                if hasattr(self.ui, 'textRotationSlider'):
+                    self.ui.textRotationSlider.blockSignals(True)
+                    self.ui.textRotationSlider.setValue(rotation_val)
+            finally:
+                if hasattr(self.ui, 'textRotationSlider'):
+                    self.ui.textRotationSlider.blockSignals(False)
+
+    def onSelectionChanged(self):
+        """Called when scene selection changes — update text controls to match first selected text item."""
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return
+            selected = self.scene.selectedItems()
+            first_text = None
+            for item in selected:
+                if isinstance(item, QtWidgets.QGraphicsTextItem):
+                    first_text = item
+                    break
+
+            if first_text is not None:
+                # Update UI controls to reflect the selected text item
+                self._syncTextControls(first_text)
+                # create/update selection overlay for this text item
+                try:
+                    if not hasattr(self, 'current_text_overlay') or self.current_text_overlay is None:
+                        self.current_text_overlay = TextSelectionOverlay(self.scene, first_text, editor=self)
+                    else:
+                        # if overlay exists for different item, recreate
+                        if self.current_text_overlay.text_item is not first_text:
+                            try:
+                                self.current_text_overlay.destroy()
+                            except Exception:
+                                pass
+                            self.current_text_overlay = TextSelectionOverlay(self.scene, first_text, editor=self)
+                        else:
+                            self.current_text_overlay.update()
+                except Exception as e:
+                    print('Error creating/updating selection overlay:', e)
+            else:
+                # No text selected; nothing to sync
+                # remove any existing overlay
+                try:
+                    if hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                        self.current_text_overlay.destroy()
+                        self.current_text_overlay = None
+                except Exception:
+                    pass
+        except Exception as e:
+            print('Error in onSelectionChanged:', e)
+
+    def _onTextItemChanged(self, item, change, value):
+        # called when a text item's position or selection changes
+        try:
+            if hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                if self.current_text_overlay.text_item is item:
+                    self.current_text_overlay.update()
+                    try:
+                        self._syncTextControls(item)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     def handleRotation(self, angle):
         self.rotation_angle = angle
@@ -360,7 +827,7 @@ class MapEditor(QtWidgets.QMainWindow):
         text_item.setPos(mid_x - 30, mid_y - 20)
         self.temp_measure_text = text_item
 
-    def createDimension(self, start_pos, end_pos):
+    def createDimension(self, start_pos, end_pos, *, from_restore=False):
         """Create a permanent dimension annotation"""
         # Calculate distance
         dx = (end_pos.x() - start_pos.x()) / self.pixels_per_cell
@@ -445,26 +912,32 @@ class MapEditor(QtWidgets.QMainWindow):
             'text': text_item,
             'background': bg_rect,
             'distance': meter_distance,
-            'start': (start_pos.x(), start_pos.y()),
-            'end': (end_pos.x(), end_pos.y())
+            'start_scene': (start_pos.x(), start_pos.y()),
+            'end_scene': (end_pos.x(), end_pos.y()),
+            'start_cell': (start_pos.x() / self.pixels_per_cell, start_pos.y() / self.pixels_per_cell),
+            'end_cell': (end_pos.x() / self.pixels_per_cell, end_pos.y() / self.pixels_per_cell)
         }
         self.dimensions.append(dimension_group)
         
-        print(f"Created dimension: {meter_distance:.3f} meters")
-        self.ui.statusInfo.setText(f"📏 Measured: {meter_distance:.3f} m")
+        if not from_restore:
+            print(f"Created dimension: {meter_distance:.3f} meters")
+            self.ui.statusInfo.setText(f"📏 Measured: {meter_distance:.3f} m")
 
-    def addTextAnnotation(self, scene_pos, text):
+    def addTextAnnotation(self, scene_pos, text, *, from_restore=False):
         """Create a movable/selectable text annotation at the given scene position."""
         try:
             # Create the text item
-            text_item = self.scene.addText(text)
+            # use our TextAnnotationItem subclass so we can get itemChange callbacks
+            text_item = TextAnnotationItem()
+            text_item.setPlainText(text)
+            self.scene.addItem(text_item)
             # Scale font relative to pixels_per_cell for readability
             font = text_item.font()
             size = max(8, int(self.pixels_per_cell / 3))
             font.setPointSize(size)
             font.setBold(True)
             text_item.setFont(font)
-            text_item.setDefaultTextColor(Qt.yellow)
+            text_item.setDefaultTextColor(Qt.black)
             text_item.setPos(scene_pos.x(), scene_pos.y())
             text_item.setZValue(1001)
 
@@ -473,17 +946,93 @@ class MapEditor(QtWidgets.QMainWindow):
                 from PyQt5.QtWidgets import QGraphicsItem
                 text_item.setFlag(QGraphicsItem.ItemIsMovable, True)
                 text_item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                # hook up change callback so overlay can update when item moves
+                text_item.setChangeCallback(self._onTextItemChanged)
             except Exception:
-                # Older PyQt versions: ignore
                 pass
 
-            self.text_items.append(text_item)
-            print(f"Added text annotation: '{text}' at ({scene_pos.x():.1f}, {scene_pos.y():.1f})")
-            self.ui.statusInfo.setText(f"Added text: {text}")
+            if not from_restore:
+                try:
+                    text_item.setSelected(True)
+                except Exception:
+                    pass
+                self.text_items.append(text_item)
+                print(f"Added text annotation: '{text}' at ({scene_pos.x():.1f}, {scene_pos.y():.1f})")
+                self.ui.statusInfo.setText(f"Added text: {text}")
             return text_item
         except Exception as e:
             print('Error creating text annotation:', e)
             return None
+
+    def _captureTextAnnotations(self, previous_pixels_per_cell):
+        """Capture the current text annotations so they can survive a scene rebuild."""
+        data = []
+        valid_items = []
+        items = list(getattr(self, 'text_items', []))
+        scale = previous_pixels_per_cell if previous_pixels_per_cell else self.pixels_per_cell or 1
+        for item in items:
+            try:
+                if item is None or item.scene() is None:
+                    continue
+            except RuntimeError:
+                continue
+            try:
+                font = item.font()
+                size_f = font.pointSizeF()
+                if size_f <= 0:
+                    size_f = font.pointSize()
+                color = item.defaultTextColor()
+                color_tuple = (color.red(), color.green(), color.blue(), color.alpha())
+                data.append({
+                    'text': item.toPlainText(),
+                    'cell_pos': (item.pos().x() / scale, item.pos().y() / scale),
+                    'font_family': font.family(),
+                    'font_size': size_f,
+                    'font_bold': font.bold(),
+                    'color': color_tuple,
+                    'rotation': item.rotation(),
+                    'z': item.zValue(),
+                    'selected': item.isSelected(),
+                })
+                valid_items.append(item)
+            except Exception:
+                continue
+        self.text_items = valid_items
+        return data
+
+    def _restoreTextAnnotations(self, text_data):
+        """Recreate text annotations after rebuilding the scene."""
+        restored = []
+        for entry in text_data:
+            try:
+                cell_x, cell_y = entry.get('cell_pos', (0, 0))
+                scene_pos = QtCore.QPointF(cell_x * self.pixels_per_cell, cell_y * self.pixels_per_cell)
+                item = self.addTextAnnotation(scene_pos, entry.get('text', ''), from_restore=True)
+                if item is None:
+                    continue
+                font = item.font()
+                family = entry.get('font_family')
+                if family:
+                    font.setFamily(family)
+                size = entry.get('font_size', 0)
+                if size and size > 0:
+                    font.setPointSizeF(size)
+                font.setBold(bool(entry.get('font_bold')))
+                item.setFont(font)
+                color_tuple = entry.get('color')
+                if color_tuple:
+                    item.setDefaultTextColor(QtGui.QColor(*color_tuple))
+                item.setZValue(entry.get('z', 1001))
+                item.setRotation(entry.get('rotation', 0))
+                restored.append(item)
+                if entry.get('selected'):
+                    try:
+                        item.setSelected(True)
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        self.text_items = restored
 
     def cancelMeasurement(self):
         """Cancel ongoing measurement"""
@@ -625,6 +1174,65 @@ class MapEditor(QtWidgets.QMainWindow):
         
         self.selected_dimension = None
 
+    def _captureDimensions(self, previous_pixels_per_cell):
+        """Capture dimension metadata so we can rebuild them after redraw."""
+        data = []
+        valid_dims = []
+        selected_index = None
+        scale = previous_pixels_per_cell if previous_pixels_per_cell else self.pixels_per_cell or 1
+        for idx, dim in enumerate(list(getattr(self, 'dimensions', []))):
+            try:
+                if dim.get('line') is None:
+                    continue
+            except Exception:
+                continue
+            start_cell = dim.get('start_cell')
+            end_cell = dim.get('end_cell')
+            if not start_cell or not end_cell:
+                start_scene = dim.get('start_scene')
+                end_scene = dim.get('end_scene')
+                if not start_scene or not end_scene:
+                    try:
+                        line = dim['line'].line()
+                        start_scene = (line.x1(), line.y1())
+                        end_scene = (line.x2(), line.y2())
+                    except Exception:
+                        continue
+                start_cell = (start_scene[0] / scale, start_scene[1] / scale)
+                end_cell = (end_scene[0] / scale, end_scene[1] / scale)
+            data.append({
+                'start_cell': start_cell,
+                'end_cell': end_cell,
+            })
+            valid_dims.append(dim)
+            if dim is self.selected_dimension:
+                selected_index = len(data) - 1
+        self.dimensions = valid_dims
+        if selected_index is not None and selected_index >= len(data):
+            selected_index = None
+        return data, selected_index
+
+    def _restoreDimensions(self, dimensions_data, selected_index):
+        """Restore dimension annotations after a scene rebuild."""
+        restored_selection = None
+        for idx, entry in enumerate(dimensions_data):
+            try:
+                start_cell = entry.get('start_cell')
+                end_cell = entry.get('end_cell')
+                if not start_cell or not end_cell:
+                    continue
+                start_pos = QtCore.QPointF(start_cell[0] * self.pixels_per_cell,
+                                           start_cell[1] * self.pixels_per_cell)
+                end_pos = QtCore.QPointF(end_cell[0] * self.pixels_per_cell,
+                                         end_cell[1] * self.pixels_per_cell)
+                self.createDimension(start_pos, end_pos, from_restore=True)
+                if selected_index is not None and idx == selected_index:
+                    restored_selection = self.dimensions[-1]
+            except Exception:
+                continue
+        if restored_selection is not None:
+            self.selectDimension(restored_selection)
+
     def createCursorIndicator(self):
         """Create a visual cursor indicator"""
         if not hasattr(self, 'scene') or not self.scene:
@@ -692,16 +1300,22 @@ class MapEditor(QtWidgets.QMainWindow):
             self.cursor_indicator = None
 
     def handleZoom(self, index):
+        previous_pixels = getattr(self, 'pixels_per_cell', self.min_multiplier)
         self.zoom = self.ui.zoomBox.currentData()
+        if not self.zoom:
+            self.zoom = 1
         self.pixels_per_cell = self.min_multiplier * self.zoom 
-        self.draw_map()
+        self.draw_map(previous_pixels_per_cell=previous_pixels)
     
     def handleZoomSlider(self, value):
         """Handle zoom changes from the slider (value is integer multiplier)."""
+        previous_pixels = getattr(self, 'pixels_per_cell', self.min_multiplier)
         try:
             self.zoom = int(value)
         except Exception:
             return
+        if self.zoom <= 0:
+            self.zoom = 1
         self.pixels_per_cell = self.min_multiplier * self.zoom
         # If a zoomBox exists, try to keep it in sync by selecting nearest index
         try:
@@ -719,8 +1333,7 @@ class MapEditor(QtWidgets.QMainWindow):
             self.ui.zoomBox.setCurrentIndex(best_idx)
         except Exception:
             pass
-
-        self.draw_map()
+        self.draw_map(previous_pixels_per_cell=previous_pixels)
         
 
     def read(self, fn):
@@ -866,13 +1479,39 @@ class MapEditor(QtWidgets.QMainWindow):
             self.ui.graphicsView.viewport().setFocus()
         except Exception:
             pass
-        # If text mode, prompt for text and add annotation
+        # Selection tool: let the scene handle selection/dragging
+        if self.tool_mode == 'select':
+            try:
+                QtWidgets.QGraphicsScene.mousePressEvent(self.scene, event)
+            except Exception:
+                pass
+            return
+
+        # If text mode, add or edit text annotations
         if self.tool_mode == 'text':
+            # If clicking existing text/handles/overlay, don't create a new text
+            try:
+                hit_items = self.scene.items(event.scenePos())
+            except Exception:
+                hit_items = []
+            for it in hit_items:
+                if isinstance(it, (TextAnnotationItem, QtWidgets.QGraphicsTextItem, ResizeHandle)):
+                    try:
+                        QtWidgets.QGraphicsScene.mousePressEvent(self.scene, event)
+                    except Exception:
+                        pass
+                    return
+
+            if event.button() != QtCore.Qt.LeftButton:
+                QtWidgets.QGraphicsScene.mousePressEvent(self.scene, event)
+                return
+
             scene_pos = event.scenePos()
             try:
-                text, ok = QtWidgets.QInputDialog.getText(self, 'Add Text', 'Annotation text:')
-                if ok and text and text.strip():
-                    self.addTextAnnotation(scene_pos, text.strip())
+                # Create a new in-place editable text item
+                item = self.addTextAnnotation(scene_pos, "Text")
+                if item is not None:
+                    item.beginEdit()
             except Exception as e:
                 print('Error adding text annotation:', e)
             return
@@ -968,16 +1607,33 @@ class MapEditor(QtWidgets.QMainWindow):
         x = x * self.pixels_per_cell
         y = y * self.pixels_per_cell
         return self.scene.addRect(x, y, self.pixels_per_cell, self.pixels_per_cell, pen, brush)
+    def draw_map(self, previous_pixels_per_cell=None):        
+        prev_scale = previous_pixels_per_cell if previous_pixels_per_cell else getattr(self, 'pixels_per_cell', 1)
+        if prev_scale <= 0:
+            prev_scale = 1
 
+        preserved_text = self._captureTextAnnotations(prev_scale)
+        preserved_dims, selected_dim_index = self._captureDimensions(prev_scale)
 
-    def draw_map(self):        
+        # Drop any lingering overlay tied to the old scene
+        if hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+            try:
+                self.current_text_overlay.destroy()
+            except Exception:
+                pass
+            self.current_text_overlay = None
+
         self.scene = QtWidgets.QGraphicsScene()
         self.ui.graphicsView.setScene(self.scene)
+        # Track selection changes on the scene so we can update text property UI
+        try:
+            self.scene.selectionChanged.connect(self.onSelectionChanged)
+        except Exception:
+            pass
         self.scene.mousePressEvent = self.mapClick
         self.grids = []
 
         # draw the cells
-        self.scene.clear()
         for x in range(0,self.map_width_cells):
             grid_col = []
             for y in range(0, self.map_height_cells):
@@ -992,17 +1648,23 @@ class MapEditor(QtWidgets.QMainWindow):
             pen = QPen(Qt.lightGray)
             pen.setWidth(1)
             pixel_width = self.map_width_cells * self.pixels_per_cell
-            pixel_height =self. map_height_cells * self.pixels_per_cell
+            pixel_height = self.map_height_cells * self.pixels_per_cell
             for x in range(0, pixel_width, self.pixels_per_cell):
                 self.scene.addLine(x, 0, x, pixel_height, pen)
             for y in range(0, pixel_height, self.pixels_per_cell):
                 self.scene.addLine(0, y, pixel_width, y, pen)
-        
-        # Recreate cursor indicator after redrawing scene
-        if self.cursor_indicator:
+
+        # Restore dimensions and text annotations after rebuilding the grid
+        self.dimensions = []
+        self.selected_dimension = None
+        self._restoreDimensions(preserved_dims, selected_dim_index)
+        self._restoreTextAnnotations(preserved_text)
+
+        # Recreate cursor indicator after redrawing scene if it previously existed
+        recreate_cursor = bool(self.cursor_indicator)
+        if recreate_cursor:
             self.cursor_indicator = None
             self.createCursorIndicator()
-
     def closeEvent(self, event):
         self.close()
 
