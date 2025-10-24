@@ -198,8 +198,17 @@ class Ui_MapEditor(object):
         self.zoomLayout = QtWidgets.QHBoxLayout()
         self.label = QtWidgets.QLabel("Zoom:")
         self.zoomBox = QtWidgets.QComboBox()
+        # Add a slider for continuous zoom control (1..16 multiplier)
+        self.zoomSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.zoomSlider.setMinimum(1)
+        self.zoomSlider.setMaximum(16)
+        self.zoomSlider.setValue(1)
+        self.zoomSlider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.zoomSlider.setTickInterval(1)
+
         self.zoomLayout.addWidget(self.label)
         self.zoomLayout.addWidget(self.zoomBox)
+        self.zoomLayout.addWidget(self.zoomSlider)
         
         # Rotation control
         self.rotationLayout = QtWidgets.QHBoxLayout()

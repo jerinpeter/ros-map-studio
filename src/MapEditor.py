@@ -36,6 +36,11 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.zoomBox.addItem("800 %", 8)
         self.ui.zoomBox.addItem("1600 %", 16)
         self.ui.zoomBox.currentIndexChanged.connect(self.handleZoom)
+        # Slider-based zoom control (1..16 multiplier)
+        try:
+            self.ui.zoomSlider.valueChanged.connect(self.handleZoomSlider)
+        except Exception:
+            pass
 
         self.ui.colorBox.addItem('🔄 Alternate', 0)
         self.ui.colorBox.addItem('⚫ Occupied', 1)
@@ -116,7 +121,7 @@ class MapEditor(QtWidgets.QMainWindow):
                 if self.selected_dimension:
                     self.deleteSelectedDimension()
                     return True
-        
+
         # Handle mouse move for painting
         if (event.type() == QtCore.QEvent.MouseMove and 
             source is self.ui.graphicsView.viewport()):
@@ -147,12 +152,6 @@ class MapEditor(QtWidgets.QMainWindow):
         
         # Handle mouse enter/leave to show/hide cursor
         elif event.type() == QtCore.QEvent.Enter and source is self.ui.graphicsView.viewport():
-            # Ensure the viewport gets keyboard focus when the mouse enters
-            try:
-                self.ui.graphicsView.viewport().setFocus()
-            except Exception:
-                pass
-
             if not self.cursor_indicator:
                 self.createCursorIndicator()
                 
@@ -633,6 +632,32 @@ class MapEditor(QtWidgets.QMainWindow):
         self.zoom = self.ui.zoomBox.currentData()
         self.pixels_per_cell = self.min_multiplier * self.zoom 
         self.draw_map()
+    
+    def handleZoomSlider(self, value):
+        """Handle zoom changes from the slider (value is integer multiplier)."""
+        try:
+            self.zoom = int(value)
+        except Exception:
+            return
+        self.pixels_per_cell = self.min_multiplier * self.zoom
+        # If a zoomBox exists, try to keep it in sync by selecting nearest index
+        try:
+            # find the combo index whose data is closest to current zoom
+            best_idx = 0
+            best_diff = None
+            for i in range(self.ui.zoomBox.count()):
+                d = self.ui.zoomBox.itemData(i)
+                if d is None:
+                    continue
+                diff = abs(d - self.zoom)
+                if best_diff is None or diff < best_diff:
+                    best_diff = diff
+                    best_idx = i
+            self.ui.zoomBox.setCurrentIndex(best_idx)
+        except Exception:
+            pass
+
+        self.draw_map()
         
 
     def read(self, fn):
@@ -909,15 +934,58 @@ class MapEditor(QtWidgets.QMainWindow):
         self.close()
 
     def saveEvent(self, event):
+        """Save two outputs into an `output/` folder at the repo root:
+        - raw PGM (current map model without annotations)
+        - annotated PNG (renders the QGraphicsScene including annotations)
+        """
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        out_dir = os.path.join(repo_root, 'output')
         try:
-            self.im.save(self.fn)
-            self.ui.statusInfo.setText("💾 Map saved successfully!")
-            self.ui.statusbar.showMessage(f"Saved: {os.path.basename(self.fn)}", 3000)
-            print(f"Map saved to: {self.fn}")
+            os.makedirs(out_dir, exist_ok=True)
+        except Exception:
+            pass
+
+        base_name = os.path.splitext(os.path.basename(self.fn))[0]
+
+        # 1) Save raw PGM (the model image without annotations)
+        raw_path = os.path.join(out_dir, base_name + '.pgm')
+        try:
+            self.im.save(raw_path)
+            print(f"Raw map saved to: {raw_path}")
         except Exception as e:
-            self.ui.statusInfo.setText("❌ Error saving map!")
-            self.ui.statusbar.showMessage(f"Error: {str(e)}", 5000)
-            print(f"Error saving map: {e}")
+            self.ui.statusInfo.setText("❌ Error saving raw map!")
+            self.ui.statusbar.showMessage(f"Error saving raw map: {str(e)}", 5000)
+            print(f"Error saving raw map: {e}")
+            return
+
+        # 2) Render annotated scene to an image and save as PNG
+        try:
+            pixel_width = int(self.map_width_cells * self.pixels_per_cell)
+            pixel_height = int(self.map_height_cells * self.pixels_per_cell)
+
+            # Create QImage canvas with alpha for annotations
+            qim = QtGui.QImage(pixel_width, pixel_height, QtGui.QImage.Format_ARGB32)
+            qim.fill(QtGui.QColor(0, 0, 0, 0))
+
+            painter = QtGui.QPainter(qim)
+            # Render the scene at 1:1 scale
+            self.scene.render(painter)
+            painter.end()
+
+            annotated_path = os.path.join(out_dir, base_name + '_annotated.png')
+            saved = qim.save(annotated_path)
+            if not saved:
+                raise IOError('Failed to save annotated image')
+            print(f"Annotated map saved to: {annotated_path}")
+        except Exception as e:
+            self.ui.statusInfo.setText("❌ Error saving annotated map!")
+            self.ui.statusbar.showMessage(f"Error saving annotated map: {str(e)}", 5000)
+            print(f"Error saving annotated map: {e}")
+            return
+
+        # Success
+        self.ui.statusInfo.setText(f"💾 Saved raw and annotated maps to {out_dir}")
+        self.ui.statusbar.showMessage(f"Saved: {os.path.basename(raw_path)} and {os.path.basename(annotated_path)}", 5000)
 
 
 if __name__ == '__main__':
