@@ -417,7 +417,12 @@ class MapEditor(QtWidgets.QMainWindow):
         
         self.ui.closeButton.clicked.connect(self.closeEvent)
         self.ui.saveButton.clicked.connect(self.saveEvent)
-        self.ui.clearDimensionsBtn.clicked.connect(self.clearDimensions)
+        # Make Clear Dimensions undoable
+        try:
+            self.ui.clearDimensionsBtn.clicked.disconnect()
+        except Exception:
+            pass
+        self.ui.clearDimensionsBtn.clicked.connect(lambda: self._pushSnapshotAction("Clear Dimensions", self.clearDimensions))
         try:
             self.ui.undoButton.clicked.connect(self.undo_stack.undo)
             self.ui.redoButton.clicked.connect(self.undo_stack.redo)
@@ -1279,6 +1284,25 @@ class MapEditor(QtWidgets.QMainWindow):
         click_tolerance = 10  # pixels
         
         for dim in self.dimensions:
+            # 1) Check if clicking on the measurement label/background box
+            try:
+                bg = dim.get('background')
+                if bg is not None:
+                    bg_rect_scene = bg.mapToScene(bg.boundingRect()).boundingRect()
+                    if bg_rect_scene.contains(pos):
+                        return dim
+            except Exception:
+                pass
+            try:
+                txt = dim.get('text')
+                if txt is not None:
+                    txt_rect_scene = txt.mapToScene(txt.boundingRect()).boundingRect()
+                    if txt_rect_scene.contains(pos):
+                        return dim
+            except Exception:
+                pass
+
+            # 2) Otherwise check proximity to the dimension line
             line = dim['line'].line()
             # Check if click is near the line
             distance = self.pointToLineDistance(
@@ -1447,6 +1471,101 @@ class MapEditor(QtWidgets.QMainWindow):
                 continue
         if restored_selection is not None:
             self.selectDimension(restored_selection)
+
+    def _captureState(self):
+        """Capture current text and dimensions in cell coordinates for undo/redo."""
+        scale = getattr(self, 'pixels_per_cell', 1) or 1
+        text_data = self._captureTextAnnotations(scale)
+        dims_data, selected_idx = self._captureDimensions(scale)
+        return {
+            'text': text_data,
+            'dimensions': dims_data,
+            'selected_dimension_index': selected_idx,
+        }
+
+    def _restoreState(self, state):
+        """Restore text and dimensions from a snapshot state."""
+        if not state:
+            return
+        # Clear current overlays
+        try:
+            if hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                self.current_text_overlay.destroy()
+        except Exception:
+            pass
+        self.current_text_overlay = None
+
+        # Remove current dimensions from scene
+        try:
+            for dim in list(getattr(self, 'dimensions', [])):
+                try:
+                    self.scene.removeItem(dim['line'])
+                    self.scene.removeItem(dim['arrow1'])
+                    self.scene.removeItem(dim['arrow2'])
+                    self.scene.removeItem(dim['text'])
+                    self.scene.removeItem(dim['background'])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.dimensions = []
+        self.selected_dimension = None
+
+        # Remove current text annotations from scene
+        try:
+            for item in list(getattr(self, 'text_items', [])):
+                try:
+                    if item is not None and item.scene() is self.scene:
+                        self.scene.removeItem(item)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.text_items = []
+
+        # Restore from snapshot
+        dims = state.get('dimensions', [])
+        sel_idx = state.get('selected_dimension_index')
+        self._restoreDimensions(dims, sel_idx)
+        self._restoreTextAnnotations(state.get('text', []))
+
+    def _stateChanged(self, a, b):
+        try:
+            return a != b
+        except Exception:
+            return True
+
+    def _pushSnapshotAction(self, label, fn_apply):
+        """Capture state before and after fn_apply; push an undo command if changed."""
+        before = self._captureState()
+        fn_apply()
+        after = self._captureState()
+        if self._stateChanged(before, after):
+            try:
+                self.undo_stack.push(SnapshotCommand(self, before, after, label))
+            except Exception:
+                pass
+
+    def _beginSnapshot(self, label):
+        try:
+            self._active_snapshot_label = label
+            self._active_snapshot_before = self._captureState()
+        except Exception:
+            self._active_snapshot_label = None
+            self._active_snapshot_before = None
+
+    def _endSnapshot(self, label=None):
+        try:
+            before = getattr(self, '_active_snapshot_before', None)
+            if before is None:
+                return
+            after = self._captureState()
+            lab = label or getattr(self, '_active_snapshot_label', "Edit")
+            if self._stateChanged(before, after):
+                self.undo_stack.push(SnapshotCommand(self, before, after, lab))
+        finally:
+            self._active_snapshot_before = None
+            self._active_snapshot_label = None
 
     def createCursorIndicator(self):
         """Create a visual cursor indicator"""
@@ -1749,8 +1868,11 @@ class MapEditor(QtWidgets.QMainWindow):
                 print(f"Measurement started at ({scene_pos.x():.1f}, {scene_pos.y():.1f})")
                 self.ui.statusInfo.setText("📏 Click second point (ESC to cancel)")
             else:
-                # Second click - complete measurement
-                self.createDimension(self.measure_start_point, scene_pos)
+                # Second click - complete measurement (undoable)
+                self._pushSnapshotAction(
+                    "Add Dimension",
+                    lambda: self.createDimension(self.measure_start_point, scene_pos)
+                )
                 # Clean up temporary items
                 if self.temp_measure_line:
                     self.scene.removeItem(self.temp_measure_line)
