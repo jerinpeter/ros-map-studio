@@ -349,17 +349,14 @@ class MapEditor(QtWidgets.QMainWindow):
         # Initialize cursor indicator early
         self.cursor_indicator = None
 
-        # Include 50% option and make it default
-        self.ui.zoomBox.addItem("50 %", 0.5)
-        self.ui.zoomBox.addItem("100 %", 1)
-        self.ui.zoomBox.addItem("200 %", 2)
-        self.ui.zoomBox.addItem("400 %", 4)
-        self.ui.zoomBox.addItem("800 %", 8)
-        self.ui.zoomBox.addItem("1600 %", 16)
-        self.ui.zoomBox.currentIndexChanged.connect(self.handleZoom)
-        # Slider-based zoom control (1..16 multiplier)
+        # Progressive zoom via slider (percent 50..400)
         try:
             self.ui.zoomSlider.valueChanged.connect(self.handleZoomSlider)
+        except Exception:
+            pass
+        # Use only progressive zoom; disable discrete presets box to avoid confusion
+        try:
+            self.ui.zoomBox.setEnabled(False)
         except Exception:
             pass
 
@@ -381,6 +378,12 @@ class MapEditor(QtWidgets.QMainWindow):
         self.temp_measure_text = None
         self.dimensions = []  # Store all dimension annotations
         self.selected_dimension = None  # Track selected dimension for deletion
+        
+        # Initialize line-draw tool state
+        self.drawing_line = False
+        self.line_start_point = None
+        self.temp_line = None
+        self.lines = []  # Store drawn line items (for persistence/undo)
         
         # Initialize cursor size
         self.cursor_size = 1
@@ -413,11 +416,6 @@ class MapEditor(QtWidgets.QMainWindow):
 
         self.min_multiplier = math.ceil(view_width / self.map_width_cells)
         # Start zoom at 50%
-        try:
-            # Select the 50% entry we added above
-            self.ui.zoomBox.setCurrentIndex(0)
-        except Exception:
-            pass
         self.zoom = 0.5
         self.pixels_per_cell = self.min_multiplier * self.zoom 
 
@@ -486,6 +484,9 @@ class MapEditor(QtWidgets.QMainWindow):
                     self.cancelMeasurement()
                     self.ui.statusInfo.setText("📏 Measurement cancelled - Click to start")
                     print("Measurement cancelled with ESC")
+                elif self.tool_mode == 'line' and self.drawing_line:
+                    self.cancelLineDrawing()
+                    self.ui.statusInfo.setText("➖ Line drawing cancelled - Click to start")
                 elif self.selected_dimension:
                     self.deselectDimension()
                 else:
@@ -542,29 +543,35 @@ class MapEditor(QtWidgets.QMainWindow):
         if (event.type() == QtCore.QEvent.MouseMove and 
             source is self.ui.graphicsView.viewport()):
             
-            # Update cursor indicator position
-            scene_pos = self.ui.graphicsView.mapToScene(event.pos())
-            self.updateCursorIndicator(scene_pos)
-            
-            # Paint if in paint mode and dragging
-            if (self.tool_mode == 'paint' and 
-                self.color != 'alternate' and 
-                event.buttons() == QtCore.Qt.LeftButton):
-                
-                pos = event.pos()
-                x = pos.x() + self.ui.graphicsView.horizontalScrollBar().value()
-                y = pos.y() + self.ui.graphicsView.verticalScrollBar().value()
-                x = math.floor(x / self.pixels_per_cell)
-                y = math.floor(y / self.pixels_per_cell)
-                
-                # Apply brush with cursor size
-                self.paint_area(x, y, self.cursor_size)
-            
-            # Show preview line in measure mode
-            elif (self.tool_mode == 'measure' and 
-                  self.measuring and 
-                  self.measure_start_point is not None):
-                self.updateMeasurePreview(scene_pos)
+                        # Update cursor indicator position
+                        scene_pos = self.ui.graphicsView.mapToScene(event.pos())
+                        self.updateCursorIndicator(scene_pos)
+
+                        # Paint if in paint mode and dragging
+                        if (self.tool_mode == 'paint' and 
+                                self.color != 'alternate' and 
+                                event.buttons() == QtCore.Qt.LeftButton):
+
+                                pos = event.pos()
+                                x = pos.x() + self.ui.graphicsView.horizontalScrollBar().value()
+                                y = pos.y() + self.ui.graphicsView.verticalScrollBar().value()
+                                x = math.floor(x / self.pixels_per_cell)
+                                y = math.floor(y / self.pixels_per_cell)
+
+                                # Apply brush with cursor size
+                                self.paint_area(x, y, self.cursor_size)
+
+                        # Show preview line in measure mode
+                        elif (self.tool_mode == 'measure' and 
+                                    self.measuring and 
+                                    self.measure_start_point is not None):
+                                self.updateMeasurePreview(scene_pos)
+
+                        # Show preview line in line-draw mode
+                        elif (self.tool_mode == 'line' and 
+                                    self.drawing_line and 
+                                    self.line_start_point is not None):
+                                self.updateLinePreview(scene_pos)
         
         # Handle mouse enter/leave to show/hide cursor
         elif event.type() == QtCore.QEvent.Enter and source is self.ui.graphicsView.viewport():
@@ -1050,6 +1057,60 @@ class MapEditor(QtWidgets.QMainWindow):
         text_item.setPos(mid_x - 30, mid_y - 20)
         self.temp_measure_text = text_item
 
+    def updateLinePreview(self, end_pos):
+        """Update the temporary straight line while drawing a line."""
+        if self.temp_line:
+            try:
+                self.scene.removeItem(self.temp_line)
+            except Exception:
+                pass
+            self.temp_line = None
+        if not self.line_start_point:
+            return
+        pen = QPen(Qt.black)
+        pen.setWidth(max(1, int(self.cursor_size)))
+        self.temp_line = self.scene.addLine(
+            self.line_start_point.x(), self.line_start_point.y(),
+            end_pos.x(), end_pos.y(), pen
+        )
+        try:
+            self.temp_line.setZValue(900)
+        except Exception:
+            pass
+
+    def createLine(self, start_pos, end_pos, thickness=1, from_restore=False):
+        """Create a persistent straight line with given thickness and store it."""
+        if not hasattr(self, 'scene') or self.scene is None:
+            return None
+        try:
+            pen = QPen(Qt.black)
+            pen.setWidth(max(1, int(thickness or 1)))
+            item = self.scene.addLine(start_pos.x(), start_pos.y(), end_pos.x(), end_pos.y(), pen)
+            try:
+                item.setZValue(850)
+            except Exception:
+                pass
+            try:
+                from PyQt5.QtWidgets import QGraphicsItem
+                item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            except Exception:
+                pass
+            entry = {
+                'item': item,
+                'start_scene': (start_pos.x(), start_pos.y()),
+                'end_scene': (end_pos.x(), end_pos.y()),
+                'start_cell': (start_pos.x() / self.pixels_per_cell, start_pos.y() / self.pixels_per_cell),
+                'end_cell': (end_pos.x() / self.pixels_per_cell, end_pos.y() / self.pixels_per_cell),
+                'thickness': max(1, int(thickness or 1)),
+            }
+            self.lines.append(entry)
+            if not from_restore:
+                self.ui.statusInfo.setText("➖ Line added")
+            return item
+        except Exception as e:
+            print('Error creating line:', e)
+            return None
+
     def createDimension(self, start_pos, end_pos, *, from_restore=False):
         """Create a permanent dimension annotation"""
         # Calculate distance
@@ -1273,6 +1334,17 @@ class MapEditor(QtWidgets.QMainWindow):
         self.measuring = False
         self.measure_start_point = None
 
+    def cancelLineDrawing(self):
+        """Cancel an in-progress line drawing operation."""
+        if getattr(self, 'temp_line', None):
+            try:
+                self.scene.removeItem(self.temp_line)
+            except Exception:
+                pass
+            self.temp_line = None
+        self.drawing_line = False
+        self.line_start_point = None
+
     def clearDimensions(self):
         """Clear all dimension annotations"""
         for dim in self.dimensions:
@@ -1480,15 +1552,79 @@ class MapEditor(QtWidgets.QMainWindow):
         if restored_selection is not None:
             self.selectDimension(restored_selection)
 
+    def _captureLines(self, previous_pixels_per_cell):
+        """Capture drawn straight lines for persistence across redraw/undo."""
+        data = []
+        valid = []
+        scale = previous_pixels_per_cell if previous_pixels_per_cell else self.pixels_per_cell or 1
+        for entry in list(getattr(self, 'lines', [])):
+            try:
+                item = entry.get('item') if isinstance(entry, dict) else None
+                if item is None or item.scene() is None:
+                    continue
+                # Prefer stored cell coords; fall back to item's current scene coords
+                start_cell = entry.get('start_cell')
+                end_cell = entry.get('end_cell')
+                if not start_cell or not end_cell:
+                    try:
+                        ln = item.line()
+                        start_cell = (ln.x1() / scale, ln.y1() / scale)
+                        end_cell = (ln.x2() / scale, ln.y2() / scale)
+                    except Exception:
+                        continue
+                thickness = int(entry.get('thickness', 1))
+                data.append({
+                    'start_cell': start_cell,
+                    'end_cell': end_cell,
+                    'thickness': max(1, thickness),
+                })
+                valid.append(entry)
+            except Exception:
+                continue
+        self.lines = valid
+        return data
+
+    def _restoreLines(self, lines_data):
+        """Restore drawn straight lines from captured data."""
+        # Clear existing line items from scene and model list before restoring
+        try:
+            for entry in list(getattr(self, 'lines', [])):
+                try:
+                    item = entry.get('item')
+                    if item is not None and item.scene() is self.scene:
+                        self.scene.removeItem(item)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.lines = []
+
+        for entry in lines_data or []:
+            try:
+                start_cell = entry.get('start_cell')
+                end_cell = entry.get('end_cell')
+                if not start_cell or not end_cell:
+                    continue
+                start_pos = QtCore.QPointF(start_cell[0] * self.pixels_per_cell,
+                                           start_cell[1] * self.pixels_per_cell)
+                end_pos = QtCore.QPointF(end_cell[0] * self.pixels_per_cell,
+                                         end_cell[1] * self.pixels_per_cell)
+                thickness = int(entry.get('thickness', 1))
+                self.createLine(start_pos, end_pos, thickness, from_restore=True)
+            except Exception:
+                continue
+
     def _captureState(self):
-        """Capture current text and dimensions in cell coordinates for undo/redo."""
+        """Capture current text, dimensions, and lines for undo/redo/restores."""
         scale = getattr(self, 'pixels_per_cell', 1) or 1
         text_data = self._captureTextAnnotations(scale)
         dims_data, selected_idx = self._captureDimensions(scale)
+        lines_data = self._captureLines(scale)
         return {
             'text': text_data,
             'dimensions': dims_data,
             'selected_dimension_index': selected_idx,
+            'lines': lines_data,
         }
 
     def _restoreState(self, state):
@@ -1536,6 +1672,7 @@ class MapEditor(QtWidgets.QMainWindow):
         sel_idx = state.get('selected_dimension_index')
         self._restoreDimensions(dims, sel_idx)
         self._restoreTextAnnotations(state.get('text', []))
+        self._restoreLines(state.get('lines', []))
 
     def _stateChanged(self, a, b):
         try:
@@ -1650,29 +1787,19 @@ class MapEditor(QtWidgets.QMainWindow):
         self.draw_map(previous_pixels_per_cell=previous_pixels)
     
     def handleZoomSlider(self, value):
-        """Handle zoom changes from the slider (value is integer multiplier)."""
+        """Handle zoom changes from the slider - value is percent (50..400)."""
         previous_pixels = getattr(self, 'pixels_per_cell', self.min_multiplier)
         try:
-            self.zoom = int(value)
+            # Convert percent to scale factor
+            self.zoom = max(0.01, float(value) / 100.0)
         except Exception:
             return
-        if self.zoom <= 0:
-            self.zoom = 1
         self.pixels_per_cell = self.min_multiplier * self.zoom
-        # If a zoomBox exists, try to keep it in sync by selecting nearest index
+        # Update status info with current zoom percent
         try:
-            # find the combo index whose data is closest to current zoom
-            best_idx = 0
-            best_diff = None
-            for i in range(self.ui.zoomBox.count()):
-                d = self.ui.zoomBox.itemData(i)
-                if d is None:
-                    continue
-                diff = abs(d - self.zoom)
-                if best_diff is None or diff < best_diff:
-                    best_diff = diff
-                    best_idx = i
-            self.ui.zoomBox.setCurrentIndex(best_idx)
+            self.ui.statusInfo.setText(f"Zoom: {int(round(self.zoom*100))}%")
+            if hasattr(self.ui, 'zoomPercentLbl') and self.ui.zoomPercentLbl is not None:
+                self.ui.zoomPercentLbl.setText(f"{int(round(self.zoom*100))}%")
         except Exception:
             pass
         self.draw_map(previous_pixels_per_cell=previous_pixels)
@@ -1861,13 +1988,13 @@ class MapEditor(QtWidgets.QMainWindow):
         if self.tool_mode == 'measure':
             # Check if clicking on an existing dimension to select it
             scene_pos = event.scenePos()
-            
+
             # First check if clicking near any dimension line
             clicked_dimension = self.findDimensionAt(scene_pos)
             if clicked_dimension:
                 self.selectDimension(clicked_dimension)
                 return
-            
+
             # Otherwise handle measurement creation
             if not self.measuring:
                 # First click - start measurement
@@ -1892,6 +2019,34 @@ class MapEditor(QtWidgets.QMainWindow):
                 self.measuring = False
                 self.measure_start_point = None
                 self.ui.statusInfo.setText("📏 Measure Mode: Click two points")
+            return
+
+        if self.tool_mode == 'line':
+            scene_pos = event.scenePos()
+            if not self.drawing_line:
+                # First click - start line drawing
+                self.drawing_line = True
+                self.line_start_point = scene_pos
+                self.ui.statusInfo.setText("➖ Click second point (ESC to cancel)")
+            else:
+                # Second click - finalize line (undoable)
+                start = QtCore.QPointF(self.line_start_point)
+                end = QtCore.QPointF(scene_pos)
+                thickness = max(1, int(self.cursor_size))
+                self._pushSnapshotAction(
+                    "Add Line",
+                    lambda: self.createLine(start, end, thickness)
+                )
+                # Clean up temporary preview
+                if self.temp_line:
+                    try:
+                        self.scene.removeItem(self.temp_line)
+                    except Exception:
+                        pass
+                    self.temp_line = None
+                self.drawing_line = False
+                self.line_start_point = None
+                self.ui.statusInfo.setText("➖ Line Mode: Click two points")
             return
         
         # Paint tool mode
@@ -1960,6 +2115,8 @@ class MapEditor(QtWidgets.QMainWindow):
 
         preserved_text = self._captureTextAnnotations(prev_scale)
         preserved_dims, selected_dim_index = self._captureDimensions(prev_scale)
+        # Preserve drawn lines across scene rebuild
+        preserved_lines = self._captureLines(prev_scale)
 
         # Drop any lingering overlay tied to the old scene
         if hasattr(self, 'current_text_overlay') and self.current_text_overlay:
@@ -2000,10 +2157,11 @@ class MapEditor(QtWidgets.QMainWindow):
             for y in range(0, pixel_height, self.pixels_per_cell):
                 self.scene.addLine(0, y, pixel_width, y, pen)
 
-        # Restore dimensions and text annotations after rebuilding the grid
+        # Restore dimensions, lines, and text annotations after rebuilding the grid
         self.dimensions = []
         self.selected_dimension = None
         self._restoreDimensions(preserved_dims, selected_dim_index)
+        self._restoreLines(preserved_lines)
         self._restoreTextAnnotations(preserved_text)
 
         # Recreate cursor indicator after redrawing scene if it previously existed
@@ -2075,7 +2233,18 @@ if __name__ == '__main__':
         print()
         print('     $ python MapEditor.py map_file_name')
         print()
+    # On Linux without a graphical display, fallback to offscreen platform to avoid Qt crashes.
+    try:
+        if sys.platform.startswith('linux') and not os.environ.get('DISPLAY'):
+            print('INFO: No DISPLAY found. Using offscreen platform (set QT_QPA_PLATFORM=offscreen).')
+            os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+    except Exception:
+        pass
     app = QtWidgets.QApplication(sys.argv)
     window = MapEditor(sys.argv[1])
     window.show()
-    sys.exit(app.exec_())
+    try:
+        sys.exit(app.exec_())
+    except Exception as e:
+        print('ERROR: Qt application terminated with an exception:', e)
+        sys.exit(1)

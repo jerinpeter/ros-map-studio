@@ -161,6 +161,7 @@ class Ui_MapEditor(object):
         self.toolModeBox.addItem("🖱️ Select", "select")
         self.toolModeBox.addItem("🖌️ Paint", "paint")
         self.toolModeBox.addItem("📏 Measure", "measure")
+        self.toolModeBox.addItem("➖ Line", "line")
         self.toolModeBox.addItem("🔤 Text", "text")
         self.toolModeLayout.addWidget(self.toolModeLabel)
         self.toolModeLayout.addWidget(self.toolModeBox)
@@ -210,10 +211,13 @@ class Ui_MapEditor(object):
         self.textRotationSlider.setMinimum(0)
         self.textRotationSlider.setMaximum(360)
         self.textRotationSlider.setValue(0)
+        # Make the slider expand so it's fully visible
+        self.textRotationSlider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.textRotationSpinBox = QtWidgets.QSpinBox()
         self.textRotationSpinBox.setMinimum(0)
         self.textRotationSpinBox.setMaximum(360)
         self.textRotationSpinBox.setValue(0)
+        self.textRotationSpinBox.setMaximumWidth(70)
         try:
             self.textRotationSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
         except Exception:
@@ -238,20 +242,34 @@ class Ui_MapEditor(object):
         self.zoomLayout = QtWidgets.QHBoxLayout()
         self.label = QtWidgets.QLabel("Zoom:")
         self.zoomBox = QtWidgets.QComboBox()
-        # Add a slider for continuous zoom control (1..16 multiplier)
+        # Progressive zoom slider: 50% .. 400% (percent values)
         self.zoomSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.zoomSlider.setMinimum(1)
-        self.zoomSlider.setMaximum(16)
-        self.zoomSlider.setValue(1)
+        self.zoomSlider.setMinimum(50)
+        self.zoomSlider.setMaximum(400)
+        self.zoomSlider.setValue(50)
         self.zoomSlider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self.zoomSlider.setTickInterval(1)
+        self.zoomSlider.setTickInterval(10)
         # Size policies so the slider expands and others stay compact
         self.zoomSlider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.zoomBox.setMaximumWidth(110)
+        # Hide presets box since we use progressive slider only
+        self.zoomBox.setVisible(False)
+        # Live zoom percentage label
+        self.zoomPercentLbl = QtWidgets.QLabel("50%")
+        self.zoomPercentLbl.setMinimumWidth(52)
+        self.zoomPercentLbl.setMaximumWidth(60)
+        self.zoomPercentLbl.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.zoomPercentLbl.setStyleSheet("QLabel { color: #ffffff; font-weight: bold; }")
 
         self.zoomLayout.addWidget(self.label)
         self.zoomLayout.addWidget(self.zoomBox)
         self.zoomLayout.addWidget(self.zoomSlider)
+        self.zoomLayout.addWidget(self.zoomPercentLbl)
+        # Stretch so slider takes remaining space, percent label stays compact
+        self.zoomLayout.setStretch(0, 0)  # label
+        self.zoomLayout.setStretch(1, 0)  # hidden combo
+        self.zoomLayout.setStretch(2, 1)  # slider expands
+        self.zoomLayout.setStretch(3, 0)  # percent label fixed
         
         # Rotation control (two rows to avoid cramping/overlap)
         self.rotationLabel = QtWidgets.QLabel("Rotation:")
