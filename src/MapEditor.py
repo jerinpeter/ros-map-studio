@@ -381,6 +381,12 @@ class MapEditor(QtWidgets.QMainWindow):
     def eventFilter(self, source, event):
         # Handle ESC key to cancel actions
         if event.type() == QtCore.QEvent.KeyPress:
+            # If a text item is currently being edited, don't hijack key presses
+            try:
+                if self._isEditingText():
+                    return False
+            except Exception:
+                pass
             if event.key() == Qt.Key_Escape:
                 if self.tool_mode == 'measure' and self.measuring:
                     self.cancelMeasurement()
@@ -481,6 +487,19 @@ class MapEditor(QtWidgets.QMainWindow):
                     return
         except Exception:
             pass
+
+    def _isEditingText(self):
+        """Return True if a QGraphicsTextItem is currently in text edit mode."""
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return False
+            fi = self.scene.focusItem()
+            if isinstance(fi, QtWidgets.QGraphicsTextItem):
+                flags = fi.textInteractionFlags()
+                return bool(flags & Qt.TextEditorInteraction)
+        except Exception:
+            pass
+        return False
 
     def paint_area(self, center_x, center_y, brush_size):
         """Paint an area with the specified brush size"""
