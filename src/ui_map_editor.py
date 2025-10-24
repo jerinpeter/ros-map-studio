@@ -61,8 +61,8 @@ class Ui_MapEditor(object):
                 border-radius: 5px;
                 color: white;
                 font-weight: bold;
-                padding: 8px 16px;
-                min-width: 80px;
+                padding: 8px 14px;
+                min-width: 72px;
             }
             QPushButton:hover {
                 background-color: #106ebe;
@@ -183,6 +183,11 @@ class Ui_MapEditor(object):
         self.cursorSizeSpinBox.setMinimum(1)
         self.cursorSizeSpinBox.setMaximum(20)
         self.cursorSizeSpinBox.setValue(1)
+        # Ensure arrows are visible for increase/decrease
+        try:
+            self.cursorSizeSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
+        except Exception:
+            pass
         
         self.cursorLayout.addWidget(self.cursorLabel)
         self.cursorLayout.addWidget(self.cursorSizeSlider)
@@ -195,6 +200,10 @@ class Ui_MapEditor(object):
         self.textSizeSpinBox.setMinimum(6)
         self.textSizeSpinBox.setMaximum(144)
         self.textSizeSpinBox.setValue(12)
+        try:
+            self.textSizeSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
+        except Exception:
+            pass
 
         self.textRotationLabel = QtWidgets.QLabel("Text Rot:")
         self.textRotationSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -205,6 +214,10 @@ class Ui_MapEditor(object):
         self.textRotationSpinBox.setMinimum(0)
         self.textRotationSpinBox.setMaximum(360)
         self.textRotationSpinBox.setValue(0)
+        try:
+            self.textRotationSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
+        except Exception:
+            pass
 
         self.textPropLayout.addWidget(self.textSizeLabel)
         self.textPropLayout.addWidget(self.textSizeSpinBox)
@@ -232,63 +245,108 @@ class Ui_MapEditor(object):
         self.zoomSlider.setValue(1)
         self.zoomSlider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.zoomSlider.setTickInterval(1)
+        # Size policies so the slider expands and others stay compact
+        self.zoomSlider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.zoomBox.setMaximumWidth(110)
 
         self.zoomLayout.addWidget(self.label)
         self.zoomLayout.addWidget(self.zoomBox)
         self.zoomLayout.addWidget(self.zoomSlider)
         
-        # Rotation control
-        self.rotationLayout = QtWidgets.QHBoxLayout()
+        # Rotation control (two rows to avoid cramping/overlap)
         self.rotationLabel = QtWidgets.QLabel("Rotation:")
         self.rotationSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.rotationSlider.setMinimum(0)
-        self.rotationSlider.setMaximum(360)
+        self.rotationSlider.setMinimum(-180)
+        self.rotationSlider.setMaximum(180)
         self.rotationSlider.setValue(0)
+        self.rotationSlider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.rotationSpinBox = QtWidgets.QSpinBox()
-        self.rotationSpinBox.setMinimum(0)
-        self.rotationSpinBox.setMaximum(360)
+        self.rotationSpinBox.setMinimum(-180)
+        self.rotationSpinBox.setMaximum(180)
         self.rotationSpinBox.setValue(0)
         self.rotationSpinBox.setSuffix("°")
-        self.resetRotationBtn = QtWidgets.QPushButton("Reset")
-        self.resetRotationBtn.setMaximumWidth(60)
-        
-        self.rotationLayout.addWidget(self.rotationLabel)
-        self.rotationLayout.addWidget(self.rotationSlider)
-        self.rotationLayout.addWidget(self.rotationSpinBox)
-        self.rotationLayout.addWidget(self.resetRotationBtn)
-        
+        self.rotationSpinBox.setMaximumWidth(70)
+        # Ensure up/down arrows are visible in the spin box
+        try:
+            self.rotationSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
+        except Exception:
+            pass
+        self.resetRotationBtn = QtWidgets.QPushButton("↺ Reset")
+        self.resetRotationBtn.setFixedWidth(72)
+
+        self.rotationGrid = QtWidgets.QGridLayout()
+        self.rotationGrid.setHorizontalSpacing(8)
+        self.rotationGrid.setVerticalSpacing(6)
+        # Row 0: label + spinbox + reset (compact)
+        self.rotationGrid.addWidget(self.rotationLabel,   0, 0)
+        self.rotationGrid.addWidget(self.rotationSpinBox, 0, 1)
+        self.rotationGrid.addWidget(self.resetRotationBtn,0, 2)
+        # Row 1: full-width slider
+        self.rotationGrid.addWidget(self.rotationSlider,  1, 0, 1, 3)
+        # Make the slider column stretch
+        self.rotationGrid.setColumnStretch(0, 0)
+        self.rotationGrid.setColumnStretch(1, 0)
+        self.rotationGrid.setColumnStretch(2, 1)
+
         self.viewLayout.addLayout(self.zoomLayout)
-        self.viewLayout.addLayout(self.rotationLayout)
+        self.viewLayout.addLayout(self.rotationGrid)
         
         # Action buttons
+        # Use a grid layout here so buttons never overlap and can wrap into two tidy rows
         self.actionGroup = QtWidgets.QGroupBox("Actions")
-        self.actionLayout = QtWidgets.QHBoxLayout(self.actionGroup)
-        
+        self.actionLayout = QtWidgets.QGridLayout(self.actionGroup)
+        self.actionLayout.setContentsMargins(8, 8, 8, 8)
+        self.actionLayout.setHorizontalSpacing(8)
+        self.actionLayout.setVerticalSpacing(6)
+
+        # Create buttons with consistent size policies
+        common_btn_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+
         self.clearDimensionsBtn = QtWidgets.QPushButton("🗑️ Clear Dimensions")
         self.clearDimensionsBtn.setStyleSheet("QPushButton { background-color: #ff8c00; }")
+        self.clearDimensionsBtn.setSizePolicy(common_btn_policy)
+        # Prevent text truncation (ensure the trailing 'n' in 'Dimensions' is visible)
+        self.clearDimensionsBtn.setMinimumWidth(180)
+
         self.saveButton = QtWidgets.QPushButton("💾 Save")
         self.saveButton.setStyleSheet("QPushButton { background-color: #28a745; }")
+        self.saveButton.setSizePolicy(common_btn_policy)
+
         self.closeButton = QtWidgets.QPushButton("❌ Close")
         self.closeButton.setStyleSheet("QPushButton { background-color: #dc3545; }")
-        
-        self.actionLayout.addWidget(self.clearDimensionsBtn)
-        self.actionLayout.addWidget(self.saveButton)
-        self.actionLayout.addWidget(self.closeButton)
+        self.closeButton.setSizePolicy(common_btn_policy)
 
         # Undo/Redo buttons
         self.undoButton = QtWidgets.QPushButton("↶ Undo")
         self.undoButton.setToolTip("Undo (Ctrl+Z)")
+        self.undoButton.setSizePolicy(common_btn_policy)
         self.redoButton = QtWidgets.QPushButton("↷ Redo")
         self.redoButton.setToolTip("Redo (Ctrl+Shift+Z)")
-        self.actionLayout.addWidget(self.undoButton)
-        self.actionLayout.addWidget(self.redoButton)
+        self.redoButton.setSizePolicy(common_btn_policy)
+
+        # Place buttons: Close+Save together, Undo+Redo together, Clear at bottom
+        # Row 0: Close | Save
+        self.actionLayout.addWidget(self.closeButton,          0, 0)
+        self.actionLayout.addWidget(self.saveButton,           0, 1)
+        # Row 1: Undo | Redo
+        self.actionLayout.addWidget(self.undoButton,           1, 0)
+        self.actionLayout.addWidget(self.redoButton,           1, 1)
+        # Row 2: Clear Dimensions (span both columns)
+        self.actionLayout.addWidget(self.clearDimensionsBtn,   2, 0, 1, 2)
+        # Let both columns stretch evenly
+        self.actionLayout.setColumnStretch(0, 1)
+        self.actionLayout.setColumnStretch(1, 1)
         
         # Add groups to toolbar
         self.toolbarLayout.addWidget(self.fileInfoGroup)
         self.toolbarLayout.addWidget(self.toolsGroup)
         self.toolbarLayout.addWidget(self.viewGroup)
         self.toolbarLayout.addWidget(self.actionGroup)
-        self.toolbarLayout.addStretch()
+        # Balance available space so action buttons keep a sensible width and never overlap
+        self.toolbarLayout.setStretch(0, 0)  # File info (compact)
+        self.toolbarLayout.setStretch(1, 1)  # Tools (flex)
+        self.toolbarLayout.setStretch(2, 1)  # View (flex)
+        self.toolbarLayout.setStretch(3, 1)  # Actions (give it breathing room)
         
         self.mainLayout.addWidget(self.toolbarFrame)
         

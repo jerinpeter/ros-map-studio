@@ -349,6 +349,8 @@ class MapEditor(QtWidgets.QMainWindow):
         # Initialize cursor indicator early
         self.cursor_indicator = None
 
+        # Include 50% option and make it default
+        self.ui.zoomBox.addItem("50 %", 0.5)
         self.ui.zoomBox.addItem("100 %", 1)
         self.ui.zoomBox.addItem("200 %", 2)
         self.ui.zoomBox.addItem("400 %", 4)
@@ -410,7 +412,13 @@ class MapEditor(QtWidgets.QMainWindow):
         view_width = self.frameGeometry().width()
 
         self.min_multiplier = math.ceil(view_width / self.map_width_cells)
-        self.zoom = 1
+        # Start zoom at 50%
+        try:
+            # Select the 50% entry we added above
+            self.ui.zoomBox.setCurrentIndex(0)
+        except Exception:
+            pass
+        self.zoom = 0.5
         self.pixels_per_cell = self.min_multiplier * self.zoom 
 
         self.draw_map()
