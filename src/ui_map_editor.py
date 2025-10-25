@@ -11,105 +11,105 @@ class Ui_MapEditor(object):
         MapEditor.resize(1200, 800)
         MapEditor.setMinimumSize(QtCore.QSize(1000, 700))
         
-        # Set modern styling
+        # Set modern styling (refined dark theme)
         MapEditor.setStyleSheet("""
-            QMainWindow {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QWidget {
-                background-color: #2b2b2b;
-                color: #ffffff;
-            }
-            QGraphicsView {
-                background-color: #3c3c3c;
-                border: 2px solid #555555;
-                border-radius: 5px;
-            }
-            QLabel {
-                color: #ffffff;
-                font-weight: bold;
+            QMainWindow, QWidget {
+                background-color: #1f1f1f;
+                color: #f2f2f2;
+                font-family: 'Noto Sans', 'DejaVu Sans', sans-serif;
                 font-size: 12px;
             }
-            QComboBox {
-                background-color: #404040;
-                border: 2px solid #555555;
-                border-radius: 5px;
-                padding: 5px;
+
+            QGraphicsView {
+                background-color: #2a2a2a;
+                border: 1px solid #3d3d3d;
+                border-radius: 8px;
+            }
+
+            QLabel {
+                color: #eaeaea;
+                font-weight: 600;
+                font-size: 12px;
+            }
+
+            /* Inputs */
+            QComboBox, QSpinBox {
+                background-color: #2c2c2c;
+                border: 1px solid #444444;
+                border-radius: 6px;
+                padding: 6px 8px;
                 color: #ffffff;
-                min-width: 100px;
             }
-            QComboBox:hover {
-                border-color: #0078d4;
+            QComboBox:hover, QSpinBox:hover {
+                border-color: #2b9cff;
             }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
+            QComboBox::drop-down { width: 20px; border: none; }
             QComboBox::down-arrow {
                 image: none;
                 border: 2px solid #ffffff;
-                width: 6px;
-                height: 6px;
-                border-top: none;
-                border-left: none;
-                margin-right: 5px;
+                width: 6px; height: 6px; margin-right: 6px;
+                border-top: none; border-left: none;
             }
+
+            /* Buttons */
             QPushButton {
-                background-color: #0078d4;
-                border: none;
-                border-radius: 5px;
-                color: white;
-                font-weight: bold;
+                background-color: #2b9cff;
+                border: 1px solid #2b9cff;
+                border-radius: 6px;
+                color: #ffffff;
+                font-weight: 600;
                 padding: 8px 14px;
-                min-width: 72px;
+                min-height: 30px;
             }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-            QPushButton:pressed {
-                background-color: #005a9e;
-            }
+            QPushButton:hover { background-color: #1685e6; border-color: #1685e6; }
+            QPushButton:pressed { background-color: #0f6dbd; border-color: #0f6dbd; }
+
+            /* Sliders */
             QSlider::groove:horizontal {
-                border: 1px solid #555555;
+                border: 1px solid #3d3d3d;
                 height: 8px;
-                background: #3c3c3c;
+                background: #2b2b2b;
                 border-radius: 4px;
             }
             QSlider::handle:horizontal {
-                background: #0078d4;
-                border: 2px solid #0078d4;
+                background: #2b9cff;
+                border: 1px solid #2b9cff;
                 width: 18px;
                 margin: -5px 0;
                 border-radius: 9px;
             }
-            QSlider::handle:horizontal:hover {
-                background: #106ebe;
-                border-color: #106ebe;
-            }
-            QSpinBox {
-                background-color: #404040;
-                border: 2px solid #555555;
-                border-radius: 5px;
-                padding: 5px;
-                color: #ffffff;
-                min-width: 60px;
-            }
-            QSpinBox:hover {
-                border-color: #0078d4;
-            }
+            QSlider::handle:horizontal:hover { background: #1685e6; border-color: #1685e6; }
+
+            /* Group boxes as cards */
             QGroupBox {
-                font-weight: bold;
-                border: 2px solid #555555;
-                border-radius: 5px;
-                margin-top: 10px;
+                font-weight: 700;
+                border: 1px solid #3d3d3d;
+                border-radius: 10px;
+                margin-top: 16px;
+                padding-top: 10px;
+                background-color: #262626;
                 color: #ffffff;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 5px 0 5px;
+                left: 12px;
+                padding: 0 6px;
+                background-color: transparent;
             }
+
+            /* Scrollbars */
+            QScrollBar:vertical, QScrollBar:horizontal {
+                background: #2a2a2a; border: none; border-radius: 4px;
+            }
+            QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+                background: #3e3e3e; border-radius: 4px; min-height: 20px; min-width: 20px;
+            }
+            QScrollBar::handle:hover { background: #4a4a4a; }
+            QScrollBar::add-line, QScrollBar::sub-line { background: none; border: none; }
+
+            /* Status bar and tooltips */
+            QStatusBar { background-color: #202020; color: #cfcfcf; }
+            QToolTip { color: #f2f2f2; background-color: #2c2c2c; border: 1px solid #3d3d3d; }
         """)
         
         self.centralwidget = QtWidgets.QWidget(MapEditor)
@@ -195,7 +195,7 @@ class Ui_MapEditor(object):
         self.cursorLayout.addWidget(self.cursorSizeSpinBox)
 
         # Text properties (size + rotation)
-        self.textPropLayout = QtWidgets.QHBoxLayout()
+        self.textPropLayout = QtWidgets.QGridLayout()
         self.textSizeLabel = QtWidgets.QLabel("Text Size:")
         self.textSizeSpinBox = QtWidgets.QSpinBox()
         self.textSizeSpinBox.setMinimum(6)
@@ -208,26 +208,41 @@ class Ui_MapEditor(object):
 
         self.textRotationLabel = QtWidgets.QLabel("Text Rot:")
         self.textRotationSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.textRotationSlider.setMinimum(0)
-        self.textRotationSlider.setMaximum(360)
+        self.textRotationSlider.setMinimum(-180)
+        self.textRotationSlider.setMaximum(180)
         self.textRotationSlider.setValue(0)
         # Make the slider expand so it's fully visible
         self.textRotationSlider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.textRotationSlider.setMinimumWidth(220)
+        self.textRotationSlider.setFixedHeight(20)
         self.textRotationSpinBox = QtWidgets.QSpinBox()
-        self.textRotationSpinBox.setMinimum(0)
-        self.textRotationSpinBox.setMaximum(360)
+        self.textRotationSpinBox.setMinimum(-180)
+        self.textRotationSpinBox.setMaximum(180)
         self.textRotationSpinBox.setValue(0)
         self.textRotationSpinBox.setMaximumWidth(70)
         try:
             self.textRotationSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
         except Exception:
             pass
+        # Reset button for text rotation
+        self.textResetBtn = QtWidgets.QPushButton("↺ Reset")
+        self.textResetBtn.setFixedWidth(72)
 
-        self.textPropLayout.addWidget(self.textSizeLabel)
-        self.textPropLayout.addWidget(self.textSizeSpinBox)
-        self.textPropLayout.addWidget(self.textRotationLabel)
-        self.textPropLayout.addWidget(self.textRotationSlider)
-        self.textPropLayout.addWidget(self.textRotationSpinBox)
+        # Grid placement:
+        # Row 0: Text Size label | size spin | Text Rot label | rot spin | Reset
+        self.textPropLayout.addWidget(self.textSizeLabel,       0, 0)
+        self.textPropLayout.addWidget(self.textSizeSpinBox,     0, 1)
+        self.textPropLayout.addWidget(self.textRotationLabel,   0, 2)
+        self.textPropLayout.addWidget(self.textRotationSpinBox, 0, 3)
+        self.textPropLayout.addWidget(self.textResetBtn,        0, 4)
+        # Row 1: Rotation Slider spanning all columns
+        self.textPropLayout.addWidget(self.textRotationSlider,  1, 0, 1, 5)
+        # Column stretch to let slider breathe
+        self.textPropLayout.setColumnStretch(0, 0)
+        self.textPropLayout.setColumnStretch(1, 0)
+        self.textPropLayout.setColumnStretch(2, 0)
+        self.textPropLayout.setColumnStretch(3, 0)
+        self.textPropLayout.setColumnStretch(4, 0)
         
         self.toolsLayout.addLayout(self.toolModeLayout)
         self.toolsLayout.addLayout(self.colorLayout)

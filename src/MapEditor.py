@@ -341,6 +341,17 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui = Ui_MapEditor()
         self.ui.setupUi(self)
 
+        # Apply a clean, modern default font (graceful fallback on Linux)
+        try:
+            preferred = ["Noto Sans", "DejaVu Sans", "Segoe UI", "Ubuntu"]
+            for fam in preferred:
+                f = QtGui.QFont(fam, 10)
+                if QtGui.QFontInfo(f).family().lower().startswith(fam.split()[0].lower()):
+                    self.setFont(f)
+                    break
+        except Exception:
+            pass
+
         # Undo stack
         self.undo_stack = QUndoStack(self)
 
@@ -408,6 +419,9 @@ class MapEditor(QtWidgets.QMainWindow):
             self.ui.textRotationSlider.valueChanged.connect(self.ui.textRotationSpinBox.setValue)
             self.ui.textRotationSpinBox.valueChanged.connect(self.ui.textRotationSlider.setValue)
             self.ui.textRotationSlider.valueChanged.connect(self.handleTextRotation)
+            # Reset button for text rotation
+            if hasattr(self.ui, 'textResetBtn'):
+                self.ui.textResetBtn.clicked.connect(self.resetTextRotation)
         except Exception:
             # UI may not have text controls in older layouts
             pass
@@ -791,6 +805,11 @@ class MapEditor(QtWidgets.QMainWindow):
         
         if self.tool_mode == 'select':
             self.ui.statusInfo.setText("🖱️ Select Mode: Click to select, drag to move")
+            # Enable rubber-band selection in select mode
+            try:
+                self.ui.graphicsView.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
+            except Exception:
+                pass
             # Disable paint controls in select mode
             self.ui.colorBox.setEnabled(False)
             self.ui.cursorSizeSlider.setEnabled(False)
@@ -804,12 +823,22 @@ class MapEditor(QtWidgets.QMainWindow):
                 pass
         elif self.tool_mode == 'measure':
             self.ui.statusInfo.setText("📏 Measure Mode: Click two points")
+            # No dragging while measuring
+            try:
+                self.ui.graphicsView.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+            except Exception:
+                pass
             # Disable color selection in measure mode
             self.ui.colorBox.setEnabled(False)
             self.ui.cursorSizeSlider.setEnabled(False)
             self.ui.cursorSizeSpinBox.setEnabled(False)
         elif self.tool_mode == 'text':
             self.ui.statusInfo.setText("🔤 Text Mode: Click to add text annotations")
+            # No rubber-band drag in text mode
+            try:
+                self.ui.graphicsView.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+            except Exception:
+                pass
             # Disable color/brush controls in text mode
             self.ui.colorBox.setEnabled(False)
             self.ui.cursorSizeSlider.setEnabled(False)
@@ -821,8 +850,30 @@ class MapEditor(QtWidgets.QMainWindow):
                 self.ui.textRotationSpinBox.setEnabled(True)
             except Exception:
                 pass
+        elif self.tool_mode == 'line':
+            self.ui.statusInfo.setText("➖ Line Mode: Click two points")
+            # No rubber-band drag while drawing lines
+            try:
+                self.ui.graphicsView.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+            except Exception:
+                pass
+            # Disable paint and text controls
+            self.ui.colorBox.setEnabled(False)
+            self.ui.cursorSizeSlider.setEnabled(False)
+            self.ui.cursorSizeSpinBox.setEnabled(False)
+            try:
+                self.ui.textSizeSpinBox.setEnabled(False)
+                self.ui.textRotationSlider.setEnabled(False)
+                self.ui.textRotationSpinBox.setEnabled(False)
+            except Exception:
+                pass
         else:
             self.ui.statusInfo.setText("🖌️ Paint Mode")
+            # Ensure no drag/selection rectangle while painting
+            try:
+                self.ui.graphicsView.setDragMode(QtWidgets.QGraphicsView.NoDrag)
+            except Exception:
+                pass
             self.ui.colorBox.setEnabled(True)
             self.ui.cursorSizeSlider.setEnabled(True)
             self.ui.cursorSizeSpinBox.setEnabled(True)
@@ -902,6 +953,42 @@ class MapEditor(QtWidgets.QMainWindow):
             self._pushSnapshotAction("Rotate Text", do_change)
         except Exception as e:
             print('Error applying text rotation:', e)
+
+    def resetTextRotation(self):
+        """Reset rotation of selected text items to 0 degrees (undoable)."""
+        try:
+            if not hasattr(self, 'scene') or self.scene is None:
+                return
+            def do_reset():
+                updated_any = False
+                for item in self.scene.selectedItems():
+                    if isinstance(item, QtWidgets.QGraphicsTextItem):
+                        item.setRotation(0)
+                        updated_any = True
+                if updated_any and hasattr(self, 'current_text_overlay') and self.current_text_overlay:
+                    try:
+                        self.current_text_overlay.update()
+                    except Exception:
+                        pass
+            self._pushSnapshotAction("Reset Text Rotation", do_reset)
+            # Sync UI controls to 0 without triggering another snapshot
+            try:
+                if hasattr(self.ui, 'textRotationSlider'):
+                    self.ui.textRotationSlider.blockSignals(True)
+                    self.ui.textRotationSlider.setValue(0)
+                    self.ui.textRotationSlider.blockSignals(False)
+                if hasattr(self.ui, 'textRotationSpinBox'):
+                    self.ui.textRotationSpinBox.blockSignals(True)
+                    self.ui.textRotationSpinBox.setValue(0)
+                    self.ui.textRotationSpinBox.blockSignals(False)
+            except Exception:
+                pass
+            try:
+                self.ui.statusInfo.setText("🔄 Text rotation reset to 0°")
+            except Exception:
+                pass
+        except Exception as e:
+            print('Error resetting text rotation:', e)
 
     def _syncTextControls(self, text_item):
         """Update text property widgets to reflect the provided text item."""
