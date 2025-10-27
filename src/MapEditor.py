@@ -1,4 +1,4 @@
-from PyQt5 import QtCore, QtGui, QtWidgets, uic
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from ui_map_editor import Ui_MapEditor
 
@@ -332,12 +332,7 @@ class MapEditor(QtWidgets.QMainWindow):
     def __init__(self, fn):
         super(MapEditor, self).__init__()
 
-        # two approaches to integrating tool generated ui file shown below
-        
-        # setup user interface directly from ui file
-        #uic.loadUi('UI_MapEditor.ui', self)
-
-        # setup user interface from py module converted from ui file
+    # Setup user interface from the generated Python module (programmatic UI)
         self.ui = Ui_MapEditor()
         self.ui.setupUi(self)
 
