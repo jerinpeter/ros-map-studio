@@ -79,9 +79,10 @@ If you see “No DISPLAY found. Using offscreen platform,” you’re likely run
 	- Zoom slider: 50%–400%; live percent label at the right
 	- Rotation: slider + spinbox (-180..180) and Reset
 - Tools
-	- Tool Mode: Select, Paint, Measure, Line, Text
-	- Brush Size: slider + spinbox
-	- Text properties: size, rotation (-180..180), Reset
+  - Tool Mode: Select, Paint, Measure, Line, Text
+  - Brush Size: slider + spinbox (for Paint tool)
+  - Line Thickness: slider + spinbox (for Line tool)
+  - Text properties: size, rotation (-180..180), Reset
 - Actions
 	- Close, Save, Undo, Redo, Clear Dimensions
 	- Status bar messages at bottom
@@ -94,11 +95,13 @@ If you see “No DISPLAY found. Using offscreen platform,” you’re likely run
 	- Brush paints cells using current color mode and brush size.
 	- Color modes include Alternate (toggle per click), Occupied, Unoccupied, Uncertain.
 - Measure
-	- Click two points to add a measurement. The result shows a black line with filled arrowheads and a yellow label box with the distance in meters.
-	- Click near a dimension line or on its label to select it. Press Delete to remove.
-	- Clear Dimensions removes all dimensions (and is undoable).
+  - Click two points to add a measurement. The result shows a black line with filled arrowheads and a yellow label box with the distance in meters.
+  - Measurements are calculated using the map's resolution (from the YAML metadata) to provide real-world dimensions.
+  - This is particularly helpful for determining room dimensions, doorway widths, furniture placement areas, and other spatial measurements in architectural floor plans.
+  - Click near a dimension line or on its label to select it. Press Delete to remove.
+  - Clear Dimensions removes all dimensions (and is undoable).
 - Line
-	- Click to start, click again to end. Thickness uses brush size. ESC cancels in-progress drawing.
+  - Click to start, click again to end. Thickness is controlled by the dedicated Line Thickness control. ESC cancels in-progress drawing.
 - Text
 	- Click to place a new text item, then edit inline (Enter to finish, ESC to cancel).
 	- Use the Text Size and Text Rot controls; Reset sets rotation back to 0°.

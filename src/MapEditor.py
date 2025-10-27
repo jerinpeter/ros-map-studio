@@ -396,6 +396,14 @@ class MapEditor(QtWidgets.QMainWindow):
         self.ui.cursorSizeSlider.valueChanged.connect(self.handleCursorSize)
         self.ui.cursorSizeSpinBox.valueChanged.connect(self.handleCursorSize)
         
+        # Initialize line thickness
+        self.line_thickness = 2
+        try:
+            self.ui.lineThicknessSlider.valueChanged.connect(self.handleLineThickness)
+            self.ui.lineThicknessSpinBox.valueChanged.connect(self.handleLineThickness)
+        except Exception:
+            pass
+        
         # Initialize rotation
         self.rotation_angle = 0
         self.ui.rotationSlider.valueChanged.connect(self.handleRotation)
@@ -906,6 +914,11 @@ class MapEditor(QtWidgets.QMainWindow):
         # Update cursor indicator size
         self.updateCursorIndicatorSize()
 
+    def handleLineThickness(self, value):
+        self.line_thickness = value
+        print(f"Line thickness changed to: {self.line_thickness}")
+        self.ui.statusInfo.setText(f"Line thickness: {self.line_thickness}px")
+
     def handleTextSize(self, value):
         """Apply font size to selected text items."""
         try:
@@ -1150,7 +1163,7 @@ class MapEditor(QtWidgets.QMainWindow):
         if not self.line_start_point:
             return
         pen = QPen(Qt.black)
-        pen.setWidth(max(1, int(self.cursor_size)))
+        pen.setWidth(max(1, int(self.line_thickness)))
         self.temp_line = self.scene.addLine(
             self.line_start_point.x(), self.line_start_point.y(),
             end_pos.x(), end_pos.y(), pen
@@ -2114,7 +2127,7 @@ class MapEditor(QtWidgets.QMainWindow):
                 # Second click - finalize line (undoable)
                 start = QtCore.QPointF(self.line_start_point)
                 end = QtCore.QPointF(scene_pos)
-                thickness = max(1, int(self.cursor_size))
+                thickness = max(1, int(self.line_thickness))
                 self._pushSnapshotAction(
                     "Add Line",
                     lambda: self.createLine(start, end, thickness)

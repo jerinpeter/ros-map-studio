@@ -194,6 +194,26 @@ class Ui_MapEditor(object):
         self.cursorLayout.addWidget(self.cursorSizeSlider)
         self.cursorLayout.addWidget(self.cursorSizeSpinBox)
 
+        # Line thickness
+        self.lineThicknessLayout = QtWidgets.QHBoxLayout()
+        self.lineThicknessLabel = QtWidgets.QLabel("Line Thickness:")
+        self.lineThicknessSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.lineThicknessSlider.setMinimum(1)
+        self.lineThicknessSlider.setMaximum(20)
+        self.lineThicknessSlider.setValue(2)
+        self.lineThicknessSpinBox = QtWidgets.QSpinBox()
+        self.lineThicknessSpinBox.setMinimum(1)
+        self.lineThicknessSpinBox.setMaximum(20)
+        self.lineThicknessSpinBox.setValue(2)
+        try:
+            self.lineThicknessSpinBox.setButtonSymbols(QtWidgets.QAbstractSpinBox.UpDownArrows)
+        except Exception:
+            pass
+        
+        self.lineThicknessLayout.addWidget(self.lineThicknessLabel)
+        self.lineThicknessLayout.addWidget(self.lineThicknessSlider)
+        self.lineThicknessLayout.addWidget(self.lineThicknessSpinBox)
+
         # Text properties (size + rotation)
         self.textPropLayout = QtWidgets.QGridLayout()
         self.textSizeLabel = QtWidgets.QLabel("Text Size:")
@@ -247,6 +267,7 @@ class Ui_MapEditor(object):
         self.toolsLayout.addLayout(self.toolModeLayout)
         self.toolsLayout.addLayout(self.colorLayout)
         self.toolsLayout.addLayout(self.cursorLayout)
+        self.toolsLayout.addLayout(self.lineThicknessLayout)
         self.toolsLayout.addLayout(self.textPropLayout)
         
         # View controls group
@@ -488,6 +509,8 @@ class Ui_MapEditor(object):
         # Connect slider and spinbox synchronization
         self.cursorSizeSlider.valueChanged.connect(self.cursorSizeSpinBox.setValue)
         self.cursorSizeSpinBox.valueChanged.connect(self.cursorSizeSlider.setValue)
+        self.lineThicknessSlider.valueChanged.connect(self.lineThicknessSpinBox.setValue)
+        self.lineThicknessSpinBox.valueChanged.connect(self.lineThicknessSlider.setValue)
         self.rotationSlider.valueChanged.connect(self.rotationSpinBox.setValue)
         self.rotationSpinBox.valueChanged.connect(self.rotationSlider.setValue)
         
