@@ -1,6 +1,14 @@
 # ROS Map Studio
 
-An interactive desktop tool to clean up 2D SLAM maps and annotate them with dimensions, lines, and text. Built with PyQt5 and designed for fast editing, measurement, and export.
+An interactive desktop tool to clean up 2D SLAM maps and annotate them with dimensions, lines, and text. Perfect for measuring distances in mapped areas and creating accurate floor plans from SLAM-generated 2D maps. Built with PyQt5 and designed for fast editing, measurement, and export.
+
+## Screenshots
+
+### User Interface
+![ROS Map Studio UI](docs/UI.png)
+
+### Cleaned Map with Dimensions
+![Cleaned map with dimensions](docs/cleaned%20map%20with%20dimensions.png)
 
 ## Features
 
@@ -97,6 +105,7 @@ If you see “No DISPLAY found. Using offscreen platform,” you’re likely run
 - Measure
   - Click two points to add a measurement. The result shows a black line with filled arrowheads and a yellow label box with the distance in meters.
   - Measurements are calculated using the map's resolution (from the YAML metadata) to provide real-world dimensions.
+  - This tool is very useful for measuring distances in a mapped area and creating accurate floor plans from SLAM-generated maps.
   - This is particularly helpful for determining room dimensions, doorway widths, furniture placement areas, and other spatial measurements in architectural floor plans.
   - Click near a dimension line or on its label to select it. Press Delete to remove.
   - Clear Dimensions removes all dimensions (and is undoable).
