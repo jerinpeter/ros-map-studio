@@ -1,6 +1,6 @@
 # ROS Map Studio
 
-An interactive desktop tool to clean up 2D SLAM maps and annotate them with dimensions, lines, and text. Perfect for measuring distances in mapped areas and creating accurate floor plans from SLAM-generated 2D maps. Built with PyQt5 and designed for fast editing, measurement, and export.
+An interactive desktop tool to clean up 2D SLAM maps and annotate them with dimensions, lines, and text. Perfect for measuring distances in mapped areas and creating accurate floor plans from SLAM-generated 2D maps. **Features automatic dimension calculation and marking** - simply click two points and get real-world measurements instantly displayed with professional annotation styling. Built with PyQt5 and designed for fast editing, measurement, and export.
 
 ## Screenshots
 
@@ -16,11 +16,11 @@ An interactive desktop tool to clean up 2D SLAM maps and annotate them with dime
 - Smooth progressive zoom (50%–400%) with live percentage indicator
 - View rotation (-180° to 180°) with spinbox and Reset
 - Tools:
-	- Select: select/move text and items; rubber-band selection
-	- Paint: brush-based editing using brush size; alternate single-click toggle
-	- Measure: classic dimension with arrowheads and a yellow label box; select and delete
-	- Line: two-click line drawing with preview; thickness tied to brush size
-	- Text: add/edit text, adjustable size and rotation with a Reset
+	- 🖱️ **Select**: select/move text and items; rubber-band selection
+	- 🖌️ **Paint**: brush-based editing using brush size; alternate single-click toggle
+	- 📏 **Measure**: classic dimension with arrowheads and a yellow label box; select and delete
+	- ➖ **Line**: two-click line drawing with preview; thickness tied to brush size
+	- 🔤 **Text**: add/edit text, adjustable size and rotation with a Reset
 - Undo/Redo via snapshot system (Ctrl+Z / Ctrl+Shift+Z)
 - Clear Dimensions is undoable
 - Headless safety: if no display is found on Linux, the app switches to offscreen platform to avoid Qt crashes (note: offscreen is non-interactive; use a desktop session to work)
@@ -87,39 +87,40 @@ If you see “No DISPLAY found. Using offscreen platform,” you’re likely run
 	- Zoom slider: 50%–400%; live percent label at the right
 	- Rotation: slider + spinbox (-180..180) and Reset
 - Tools
-  - Tool Mode: Select, Paint, Measure, Line, Text
-  - Brush Size: slider + spinbox (for Paint tool)
-  - Line Thickness: slider + spinbox (for Line tool)
-  - Text properties: size, rotation (-180..180), Reset
+  - Tool Mode: 🖱️ Select, 🖌️ Paint, 📏 Measure, ➖ Line, 🔤 Text
+  - 🖌️ Brush Size: slider + spinbox (for Paint tool)
+  - ➖ Line Thickness: slider + spinbox (for Line tool)
+  - 🔤 Text properties: size, rotation (-180..180), Reset
 - Actions
 	- Close, Save, Undo, Redo, Clear Dimensions
 	- Status bar messages at bottom
 
 ## Tools in detail
 
-- Select
+- 🖱️ **Select**
 	- Click items to select. Drag to rubber-band select. Press Delete/Backspace to remove selection.
-- Paint
+- 🖌️ **Paint**
 	- Brush paints cells using current color mode and brush size.
 	- Color modes include Alternate (toggle per click), Occupied, Unoccupied, Uncertain.
-- Measure
-  - Click two points to add a measurement. The result shows a black line with filled arrowheads and a yellow label box with the distance in meters.
-  - Measurements are calculated using the map's resolution (from the YAML metadata) to provide real-world dimensions.
+- 📏 **Measure**
+  - Click two points to add a measurement. Dimensions are automatically calculated and marked with a visual annotation.
+  - **How it works**: The tool calculates the pixel distance between your two clicks, converts it to real-world units using the map's resolution value (meters per pixel) from the YAML metadata, and displays the result as a dimension line with arrowheads and a yellow label showing the distance in meters.
+  - **Visual marking**: Each measurement appears as a black line with filled triangular arrowheads at both ends and a yellow background label box containing the precise distance measurement.
   - This tool is very useful for measuring distances in a mapped area and creating accurate floor plans from SLAM-generated maps.
   - This is particularly helpful for determining room dimensions, doorway widths, furniture placement areas, and other spatial measurements in architectural floor plans.
   - Click near a dimension line or on its label to select it. Press Delete to remove.
   - Clear Dimensions removes all dimensions (and is undoable).
-- Line
+- ➖ **Line**
   - Click to start, click again to end. Thickness is controlled by the dedicated Line Thickness control. ESC cancels in-progress drawing.
-- Text
+- 🔤 **Text**
 	- Click to place a new text item, then edit inline (Enter to finish, ESC to cancel).
 	- Use the Text Size and Text Rot controls; Reset sets rotation back to 0°.
 
 ## Keyboard shortcuts
 
-- Esc: cancel measurement/line in progress, deselect dimension, or switch to Select
-- V: switch to Select tool
-- T: switch to Text tool
+- Esc: cancel measurement/line in progress, deselect dimension, or switch to 🖱️ Select
+- V: switch to 🖱️ Select tool
+- T: switch to 🔤 Text tool
 - Delete/Backspace: delete selected dimension/items
 - Ctrl+Z: Undo
 - Ctrl+Shift+Z: Redo
